@@ -61,7 +61,7 @@ Points are linearly interpolated. Ramp-up is immediate. Ramp-down waits until te
 
 ## Getting the module
 
-The `pwm1` hwmon interface for Victus S boards is in the in-tree `hp_wmi` driver. While working on this I submitted several fixes to the driver that are currently in linux-next and expected to land in 7.0–7.1:
+The `pwm1` hwmon interface for Victus S boards is in the in-tree `hp_wmi` driver. While working on this I submitted several fixes to the driver, currently queued in `platform-drivers-x86/review-ilpo-next` and expected to reach linux-next and land in 7.0–7.1:
 
 - `platform/x86: hp-wmi: fix ignored return values in fan settings`
 - `platform/x86: hp-wmi: avoid cancel_delayed_work_sync from work handler`
