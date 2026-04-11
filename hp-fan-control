@@ -1,47 +1,31 @@
 #!/bin/bash
-#
-# HP Victus fan control daemon
-# Linear interpolation curve, fast ramp-up, slow ramp-down.
-#
-# Curve (CPU Package temp -> PWM 0-255):
-#   < 40C  :   0        fan stop, passive cooling sufficient
-#   40-50C : 0->30      whisper, fan-stop'tan nazik çıkış
-#   50-60C : 30->80     fark edilmez, kütüphane OK
-#   60-72C : 80->170    smooth ramp, yük başladı
-#   72-82C : 170->240   gaming/compile bölgesi
-#   > 82C  : 255        termal koruma, throttle'dan önce max'a ulaş
-#
-# Control:
-#   touch /tmp/hp-fan-silent  ->  library mode (fans off)
-#   rm    /tmp/hp-fan-silent  ->  resume curve
 
-HP_HWMON=/sys/devices/platform/hp-wmi/hwmon/hwmon4
-CPU_TEMP=/sys/devices/platform/coretemp.0/hwmon/hwmon7/temp1_input
+CONF=/etc/hp-fan-control.conf
 SILENT_FLAG=/tmp/hp-fan-silent
+
+CT=(40000 50000 60000 72000 82000)
+CP=(0     30    80    170   240)
+HYST_MC=6000
 POLL_SEC=2
-HYST_MC=6000  # 6C: temp must drop this much before ramping down
 
-# Curve control points [millidegrees, PWM 0-255]
-CT=(40000  50000  60000  72000  82000)
-CP=(0      30     80     170    240)
+[[ -f "$CONF" ]] && source "$CONF"
 
-die() { echo "hp-fan-control: $*" >&2; exit 1; }
+HP_HWMON=$(ls -d /sys/devices/platform/hp-wmi/hwmon/hwmon* 2>/dev/null | head -1)
+CPU_TEMP=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
 
-[[ -d "$HP_HWMON" ]] || die "hp-wmi hwmon not found at $HP_HWMON"
-[[ -f "$CPU_TEMP" ]] || die "coretemp not found at $CPU_TEMP"
+[[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
+[[ -f "$CPU_TEMP" ]] || { echo "coretemp not found" >&2; exit 1; }
 
-# Linear interpolation between two points, integer arithmetic
 lerp() {
-    local t1=$1 p1=$2 t2=$3 p2=$4 t=$5
-    echo $(( p1 + (t - t1) * (p2 - p1) / (t2 - t1) ))
+    echo $(( $2 + ($5 - $1) * ($4 - $2) / ($3 - $1) ))
 }
 
 pwm_for_temp() {
-    local t=$1 last=${#CT[@]}
-    (( t <= CT[0] ))        && echo 0   && return
-    (( t >= CT[last-1] ))   && echo 255 && return
+    local t=$1 n=${#CT[@]}
+    (( t <= CT[0] ))   && echo 0   && return
+    (( t >= CT[n-1] )) && echo 255 && return
     local i
-    for (( i=0; i < last-1; i++ )); do
+    for (( i=0; i < n-1; i++ )); do
         if (( t >= CT[i] && t < CT[i+1] )); then
             lerp "${CT[i]}" "${CP[i]}" "${CT[i+1]}" "${CP[i+1]}" "$t"
             return
@@ -51,11 +35,10 @@ pwm_for_temp() {
 }
 
 apply() {
-    echo 1      > "$HP_HWMON/pwm1_enable" 2>/dev/null
-    echo "$1"   > "$HP_HWMON/pwm1"        2>/dev/null
+    echo 1    > "$HP_HWMON/pwm1_enable"
+    echo "$1" > "$HP_HWMON/pwm1"
 }
 
-# Start at max, cool down gracefully
 cur_pwm=255
 apply $cur_pwm
 last_up_temp=999999
@@ -64,10 +47,7 @@ while true; do
     sleep $POLL_SEC
 
     if [[ -f "$SILENT_FLAG" ]]; then
-        if (( cur_pwm != 0 )); then
-            apply 0
-            cur_pwm=0
-        fi
+        (( cur_pwm != 0 )) && { apply 0; cur_pwm=0; }
         continue
     fi
 
@@ -75,16 +55,8 @@ while true; do
     target=$(pwm_for_temp "$temp")
 
     if (( target > cur_pwm )); then
-        # Ramp up immediately — termal koruma öncelikli
-        apply $target
-        cur_pwm=$target
-        last_up_temp=$temp
-    elif (( target < cur_pwm )); then
-        # Ramp down sadece yeterince soğuyunca — hunting önlenir
-        if (( temp <= last_up_temp - HYST_MC )); then
-            apply $target
-            cur_pwm=$target
-            last_up_temp=$temp
-        fi
+        apply $target; cur_pwm=$target; last_up_temp=$temp
+    elif (( target < cur_pwm && temp <= last_up_temp - HYST_MC )); then
+        apply $target; cur_pwm=$target; last_up_temp=$temp
     fi
 done

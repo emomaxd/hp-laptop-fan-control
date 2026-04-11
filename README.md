@@ -1,52 +1,70 @@
 # hp-victus-fan-control
 
-Fan curve daemon for HP Victus S laptops on Linux. Fixes the firmware burst problem and gives you smooth, interpolated fan control via the `hp_wmi` hwmon interface.
+Fan curve daemon for HP Victus/Omen laptops on Linux. Requires a patched `hp_wmi` kernel module that exposes `pwm1`/`pwm1_enable` via hwmon for Victus S boards.
 
-## The problem
+## Background
 
-HP firmware resets manual fan settings after ~120s. The stock out-of-tree `hp-wmi` driver has no keep-alive, so fans revert to the firmware's aggressive auto curve and spike unpredictably. Additionally, a `u8` underflow in `gpu_delta` calculation causes the GPU fan to clamp at 100% whenever GPU target RPM < CPU target RPM.
+HP firmware resets manual fan settings after ~120s. The `hp_wmi` driver in Linux ≥7.0 implements a keep-alive that re-applies settings every 90s to prevent this. Several bugs in that implementation are fixed by patches authored by [Emre Cecanpunar](https://github.com/emomaxd):
 
-This daemon pairs with a patched `hp_wmi` kernel module that fixes both issues.
+- `u8` underflow in `gpu_delta` — GPU fan clamps at 100% when its target RPM < CPU target RPM
+- `schedule_delayed_work` instead of `mod_delayed_work` — keep-alive timer not reset on user interaction, fires prematurely
+- `cancel_delayed_work_sync` called from within the work handler — deadlock under concurrent sysfs writes
+- Missing mutex in hwmon read/write paths — race condition
 
-## Requirements
+Without these fixes, the daemon still works but you may see GPU fan spikes and occasional bursts when the keep-alive fires at the wrong time.
 
-**Kernel module:** The in-tree `hp_wmi` driver from Linux ≥7.0-rc7 (or backported). The relevant fixes:
-
-- `platform/x86: hp-wmi: fix u8 underflow in gpu_delta calculation`
-- `platform/x86: hp-wmi: use mod_delayed_work to reset keep-alive timer`
-- `platform/x86: hp-wmi: avoid cancel_delayed_work_sync from work handler`
-- `platform/x86: hp-wmi: add locking for concurrent hwmon access`
-
-The module exposes `/sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1` and `pwm1_enable` for Victus S boards. Without these fixes the keep-alive fires at the wrong time or deadlocks.
-
-**Supported boards** (DMI board name):
-
-| Board | Models |
-|-------|--------|
-| 8BBE  | HP Victus 16-s |
-| 8BD4  | HP Victus 16-s |
-| 8BD5  | HP Victus 16-s |
-| 8C99  | HP Victus 16-r1xxx |
-| 8C9C  | HP Victus 16-s1xxx |
-| 8D41  | HP Victus 16 |
-| 8BAB, 8BCA, 8BCD, 8C76, 8C78, 8A4D | HP Omen variants |
+## Supported boards
 
 Check yours: `cat /sys/class/dmi/id/board_name`
 
-## Fan curve
+| Board | Series |
+|-------|--------|
+| 8BBE, 8BD4, 8BD5, 8C99, 8C9C, 8D41 | HP Victus S |
+| 8BAB, 8BCA, 8BCD, 8C76, 8C78, 8A4D | HP Omen |
 
-Linear interpolation between control points. No step jumps.
+## Kernel module
+
+### Option A — build from source (recommended)
+
+```sh
+git clone https://github.com/torvalds/linux   # or your distro's tree
+cd linux
+# apply the patches below if your kernel is < 7.0
+make menuconfig   # enable CONFIG_HP_WMI=m, CONFIG_HWMON=m
+make -j$(nproc) M=drivers/platform/x86/hp
+sudo insmod drivers/platform/x86/hp/hp-wmi.ko
+```
+
+Patches (in order) if on an older kernel:
 
 ```
-< 40°C   →   0 PWM    fan stop
-  50°C   →  30 PWM    ~700 RPM
-  60°C   →  80 PWM    ~1900 RPM
-  72°C   → 170 PWM    ~3600 RPM
-  82°C   → 240 PWM    ~4800 RPM
-> 82°C   → 255 PWM    max
+platform/x86: hp-wmi: fix ignored return values in fan settings
+platform/x86: hp-wmi: avoid cancel_delayed_work_sync from work handler
+platform/x86: hp-wmi: use mod_delayed_work to reset keep-alive timer
+platform/x86: hp-wmi: fix u8 underflow in gpu_delta calculation
+platform/x86: hp-wmi: add locking for concurrent hwmon access
 ```
 
-Ramp-up is immediate. Ramp-down requires temp to drop 6°C below the last ramp-up point (hysteresis), preventing hunting.
+Available at: https://github.com/emomaxd/linux (branch with hp-wmi fixes)
+
+### Option B — DKMS (easiest for existing kernels)
+
+```sh
+sudo cp -r . /usr/src/hp-victus-fan-control-1.0
+sudo dkms add hp-victus-fan-control/1.0
+sudo dkms build hp-victus-fan-control/1.0
+sudo dkms install hp-victus-fan-control/1.0
+```
+
+> Note: DKMS option requires a `dkms.conf` — coming soon.
+
+### Verify
+
+```sh
+ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1
+```
+
+If the file exists, the module is loaded correctly.
 
 ## Install
 
@@ -56,32 +74,35 @@ cd hp-victus-fan-control
 sudo ./install.sh
 ```
 
-## Silent mode
-
-Toggle fans off (library, low-load):
+## Usage
 
 ```sh
-hp-fan-toggle-silent   # off
-hp-fan-toggle-silent   # back to curve
+hp-fan-curve show              # current curve
+hp-fan-curve presets           # list presets
+sudo hp-fan-curve set silent   # library/idle
+sudo hp-fan-curve set balanced # default
+sudo hp-fan-curve set performance
+sudo hp-fan-curve edit         # manual edit in $EDITOR
+hp-fan-toggle-silent           # toggle fans off/on (bind to a key)
 ```
 
-Bind to a key in your DE/WM. The daemon detects `/tmp/hp-fan-silent` and resumes the curve when it's removed.
+## Monitor
 
-## Tuning the curve
-
-Edit the two arrays in `hp-fan-control`:
-
-```bash
-CT=(40000  50000  60000  72000  82000)   # millidegrees
-CP=(0      30     80     170    240)     # PWM 0-255
+```sh
+watch -n2 'echo "cpu: $(( $(cat /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input | head -1) / 1000 ))°C  fan: $(cat /sys/devices/platform/hp-wmi/hwmon/hwmon*/fan1_input)rpm  pwm: $(cat /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1)"'
 ```
 
-Points must be strictly increasing. The daemon interpolates linearly between them and clamps to 255 above the last point.
+## Curve
 
-## How it works
+Default (balanced preset):
 
-1. Reads CPU Package temperature from coretemp (`temp1_input`)
-2. Writes `pwm1_enable=1` (manual) + interpolated `pwm1` every 2s
-3. The kernel driver's keep-alive re-applies the last value every 90s, so firmware never gets the 120s window to reset
+```
+< 40°C    0 PWM    fan stop
+  50°C   30 PWM    ~700 RPM
+  60°C   80 PWM    ~1900 RPM
+  72°C  170 PWM    ~3600 RPM
+  82°C  240 PWM    ~4800 RPM
+> 82°C  255 PWM    max
+```
 
-Polling at 2s is enough because the system's thermal time constant is ~15-20s. Faster polling wastes cycles without meaningful benefit.
+Ramp-up is immediate. Ramp-down requires temp to drop 6°C below the last ramp-up point. Edit via `hp-fan-curve edit` or by writing `/etc/hp-fan-control.conf` directly — see `conf/` for examples.

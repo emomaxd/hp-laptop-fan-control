@@ -1,0 +1,103 @@
+#!/bin/bash
+
+CONF=/etc/hp-fan-control.conf
+
+CT=(40000 50000 60000 72000 82000)
+CP=(0     30    80    170   240)
+HYST_MC=6000
+
+[[ -f "$CONF" ]] && source "$CONF"
+
+usage() {
+    echo "usage: hp-fan-curve <command>"
+    echo ""
+    echo "commands:"
+    echo "  show                  print current curve"
+    echo "  set <preset>          apply a preset (silent|balanced|performance)"
+    echo "  edit                  open config in \$EDITOR"
+    echo "  presets               list available presets"
+}
+
+cmd_show() {
+    local n=${#CT[@]}
+    printf "%-8s  %-6s\n" "temp" "pwm"
+    printf "%-8s  %-6s\n" "--------" "------"
+    printf "< %-5s°C  %d\n" "$((CT[0]/1000))" 0
+    for (( i=0; i<n; i++ )); do
+        printf "  %-5s°C  %d\n" "$((CT[i]/1000))" "${CP[i]}"
+    done
+    printf "> %-5s°C  255\n" "$((CT[n-1]/1000))"
+    echo ""
+    echo "hysteresis: $((HYST_MC/1000))°C   poll: ${POLL_SEC:-2}s"
+}
+
+write_conf() {
+    local ct=("$@")
+    local cp=("${ct[@]:${#CT[@]}}")
+    cat > "$CONF" <<EOF
+CT=(${CT[*]})
+CP=(${CP[*]})
+HYST_MC=$HYST_MC
+POLL_SEC=${POLL_SEC:-2}
+EOF
+    systemctl restart hp-fan-control 2>/dev/null
+    echo "applied. restarted hp-fan-control."
+}
+
+cmd_set() {
+    case "$1" in
+        silent)
+            CT=(50000 60000 70000 82000 90000)
+            CP=(0     20    60    150   220)
+            HYST_MC=8000
+            ;;
+        balanced)
+            CT=(40000 50000 60000 72000 82000)
+            CP=(0     30    80    170   240)
+            HYST_MC=6000
+            ;;
+        performance)
+            CT=(35000 45000 58000 68000 78000)
+            CP=(30    80    140   210   255)
+            HYST_MC=4000
+            ;;
+        *)
+            echo "unknown preset: $1"
+            echo "available: silent balanced performance"
+            exit 1
+            ;;
+    esac
+
+    [[ $EUID -ne 0 ]] && { echo "run as root to write $CONF"; exit 1; }
+    cat > "$CONF" <<EOF
+CT=(${CT[*]})
+CP=(${CP[*]})
+HYST_MC=$HYST_MC
+POLL_SEC=${POLL_SEC:-2}
+EOF
+    systemctl restart hp-fan-control 2>/dev/null
+    echo "preset '$1' applied."
+    cmd_show
+}
+
+cmd_edit() {
+    [[ $EUID -ne 0 ]] && { echo "run as root to edit $CONF"; exit 1; }
+    [[ ! -f "$CONF" ]] && cmd_set balanced > /dev/null
+    ${EDITOR:-nano} "$CONF"
+    systemctl restart hp-fan-control 2>/dev/null
+    echo "restarted hp-fan-control."
+}
+
+cmd_presets() {
+    echo "silent       fan stop up to 50°C, slow ramp — library/idle"
+    echo "balanced     default curve"
+    echo "performance  fans start earlier, reach max at 78°C"
+}
+
+case "$1" in
+    show)     cmd_show ;;
+    set)      cmd_set "$2" ;;
+    edit)     cmd_edit ;;
+    presets)  cmd_presets ;;
+    *)        usage ;;
+esac
