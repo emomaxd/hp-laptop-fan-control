@@ -7,6 +7,7 @@ Type=simple
 ExecStart=HP_FAN_CONTROL_BIN
 Restart=always
 RestartSec=3
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target

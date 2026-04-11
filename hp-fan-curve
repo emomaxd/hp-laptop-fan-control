@@ -97,9 +97,9 @@ cmd_edit() {
 
 cmd_presets() {
     cat <<EOF
-silent       fan stop to 50°C, slow ramp     — idle, library
-balanced     fan stop to 40°C, default ramp  — daily use
-performance  fans on from 35°C, max at 78°C  — gaming, compiling
+silent       minimum speed to 50°C, slow ramp  — idle, library
+balanced     minimum speed to 40°C            — daily use
+performance  fans on from 35°C, max at 78°C   — gaming, compiling
 EOF
 }
 

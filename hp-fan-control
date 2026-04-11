@@ -8,10 +8,16 @@ CP=(0  30 80 170 240)
 HYST=6
 POLL_SEC=2
 
-[[ -f "$CONF" ]] && source "$CONF"
+if [[ -f "$CONF" ]]; then
+    if ! source "$CONF" 2>/dev/null; then
+        echo "warning: failed to source $CONF, using defaults" >&2
+    fi
+fi
 
 for i in "${!CT[@]}"; do CT[$i]=$(( CT[i] * 1000 )); done
 HYST_MC=$(( HYST * 1000 ))
+
+(( POLL_SEC > 0 )) || POLL_SEC=2
 
 find_hwmon() {
     grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs dirname
@@ -45,7 +51,10 @@ apply() {
     echo "$1" > "$HP_HWMON/pwm1"
 }
 
-cleanup() { echo 2 > "$HP_HWMON/pwm1_enable"; exit; }
+cleanup() {
+    [[ -d "$HP_HWMON" ]] && echo 2 > "$HP_HWMON/pwm1_enable"
+    exit
+}
 trap cleanup SIGTERM SIGINT
 
 cur_pwm=255; apply $cur_pwm
@@ -59,7 +68,9 @@ while true; do
         continue
     fi
 
-    temp=$(< "$CPU_TEMP")
+    temp=$(< "$CPU_TEMP" 2>/dev/null)
+    [[ -z "$temp" ]] && continue
+
     target=$(pwm_for_temp "$temp")
 
     if (( target > cur_pwm )); then

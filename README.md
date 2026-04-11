@@ -76,14 +76,18 @@ The `pwm1` hwmon interface for Victus S boards is in the in-tree `hp_wmi` driver
 ```sh
 git clone https://github.com/emomaxd/linux -b hp-wmi-fixes --depth=1
 cd linux
-make -C /lib/modules/$(uname -r)/build M=$(pwd)/drivers/platform/x86/hp modules
-sudo rmmod hp_wmi 2>/dev/null; sudo insmod drivers/platform/x86/hp/hp-wmi.ko
+mkdir /tmp/hp-wmi-build
+cp drivers/platform/x86/hp/hp-wmi.c /tmp/hp-wmi-build/
+echo 'obj-m += hp-wmi.o' > /tmp/hp-wmi-build/Makefile
+make -C /lib/modules/$(uname -r)/build M=/tmp/hp-wmi-build modules
+sudo modprobe -r hp_wmi
+sudo insmod /tmp/hp-wmi-build/hp-wmi.ko
 ```
 
 To survive reboots (until next kernel update):
 
 ```sh
-sudo cp drivers/platform/x86/hp/hp-wmi.ko /lib/modules/$(uname -r)/updates/hp-wmi.ko
+sudo cp /tmp/hp-wmi-build/hp-wmi.ko /lib/modules/$(uname -r)/updates/hp-wmi.ko
 sudo depmod -a
 ```
 
