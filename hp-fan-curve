@@ -31,11 +31,11 @@ cmd_status() {
     [[ -f "$SILENT_FLAG" ]] && preset="silent (session)"
 
     local cpu_mc fan1 fan2 pwm mode
-    cpu_mc=$(< "$CPU_TEMP" 2>/dev/null) || cpu_mc=0
-    fan1=$(< "$HP_HWMON/fan1_input" 2>/dev/null) || fan1=0
-    fan2=$(< "$HP_HWMON/fan2_input" 2>/dev/null) || fan2=0
-    pwm=$(< "$HP_HWMON/pwm1" 2>/dev/null) || pwm=0
-    mode=$(< "$HP_HWMON/pwm1_enable" 2>/dev/null) || mode=0
+    cpu_mc=$(cat "$CPU_TEMP" 2>/dev/null); cpu_mc=${cpu_mc:-0}
+    fan1=$(cat "$HP_HWMON/fan1_input" 2>/dev/null); fan1=${fan1:-0}
+    fan2=$(cat "$HP_HWMON/fan2_input" 2>/dev/null); fan2=${fan2:-0}
+    pwm=$(cat "$HP_HWMON/pwm1" 2>/dev/null); pwm=${pwm:-0}
+    mode=$(cat "$HP_HWMON/pwm1_enable" 2>/dev/null); mode=${mode:-0}
     [[ $mode -eq 1 ]] && mode="manual (daemon active)" || mode="auto"
 
     printf "preset:  %s\n" "$preset"
