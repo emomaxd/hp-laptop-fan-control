@@ -71,7 +71,7 @@ The `pwm1` hwmon interface for Victus S boards is in the in-tree `hp_wmi` driver
 
 If you want these patches on an older kernel, the branch below has them applied on top of a recent stable base.
 
-**Linux ≥ 7.0:** already included. Run the check at the top.
+**Linux ≥ 7.0 (once merged):** run the check at the top to verify.
 
 **Older kernels:**
 

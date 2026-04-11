@@ -1,12 +1,10 @@
 [Unit]
 Description=HP Victus fan control
 After=multi-user.target
-# Restart on wake from suspend
-After=suspend.target hibernate.target hybrid-sleep.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/hp-fan-control
+ExecStart=HP_FAN_CONTROL_BIN
 Restart=always
 RestartSec=3
 
