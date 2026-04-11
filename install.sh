@@ -24,4 +24,4 @@ chmod 644 /etc/systemd/system/hp-fan-control.service
 
 systemctl daemon-reload
 systemctl enable --now hp-fan-control
-systemctl status hp-fan-control --no-pager
+systemctl status hp-fan-control --no-pager || true

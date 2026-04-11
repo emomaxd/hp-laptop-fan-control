@@ -50,6 +50,7 @@ cmd_status() {
 cmd_set() {
     need_root
     local name=$1
+    [[ -z "$name" ]] && { echo "usage: hp-fan-curve set <preset>"; echo "run 'hp-fan-curve presets' to list options"; exit 1; }
     local ct cp hyst
 
     case "$name" in

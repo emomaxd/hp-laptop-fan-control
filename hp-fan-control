@@ -41,6 +41,9 @@ apply() {
     echo "$1" > "$HP_HWMON/pwm1"
 }
 
+cleanup() { echo 2 > "$HP_HWMON/pwm1_enable"; exit; }
+trap cleanup SIGTERM SIGINT
+
 cur_pwm=255; apply $cur_pwm
 last_up_temp=999999
 

@@ -9,6 +9,8 @@ systemctl disable --now hp-fan-control 2>/dev/null || true
 rm -f /etc/systemd/system/hp-fan-control.service
 rm -f "$PREFIX/bin/hp-fan-control"
 rm -f "$PREFIX/bin/hp-fan-curve"
-rm -f /etc/hp-fan-control.conf
+if [[ -f /etc/hp-fan-control.conf ]]; then
+    echo "leaving /etc/hp-fan-control.conf in place — remove manually if not needed"
+fi
 systemctl daemon-reload
 echo "uninstalled"
