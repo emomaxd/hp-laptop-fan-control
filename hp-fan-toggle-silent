@@ -1,9 +1,0 @@
-#!/bin/bash
-FLAG=/tmp/hp-fan-silent
-if [[ -f "$FLAG" ]]; then
-    rm "$FLAG"
-    notify-send "Fan" "Normal mode" 2>/dev/null; echo "fan: normal"
-else
-    touch "$FLAG"
-    notify-send "Fan" "Silent mode" 2>/dev/null; echo "fan: silent"
-fi

@@ -10,15 +10,17 @@ POLL_SEC=2
 
 [[ -f "$CONF" ]] && source "$CONF"
 
-HP_HWMON=$(ls -d /sys/devices/platform/hp-wmi/hwmon/hwmon* 2>/dev/null | head -1)
+find_hwmon() {
+    grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs dirname
+}
+
+HP_HWMON=$(find_hwmon)
 CPU_TEMP=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
 
 [[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
-[[ -f "$CPU_TEMP" ]] || { echo "coretemp not found" >&2; exit 1; }
+[[ -f "$CPU_TEMP" ]] || { echo "coretemp not found"     >&2; exit 1; }
 
-lerp() {
-    echo $(( $2 + ($5 - $1) * ($4 - $2) / ($3 - $1) ))
-}
+lerp() { echo $(( $2 + ($5 - $1) * ($4 - $2) / ($3 - $1) )); }
 
 pwm_for_temp() {
     local t=$1 n=${#CT[@]}
@@ -26,10 +28,7 @@ pwm_for_temp() {
     (( t >= CT[n-1] )) && echo 255 && return
     local i
     for (( i=0; i < n-1; i++ )); do
-        if (( t >= CT[i] && t < CT[i+1] )); then
-            lerp "${CT[i]}" "${CP[i]}" "${CT[i+1]}" "${CP[i+1]}" "$t"
-            return
-        fi
+        (( t >= CT[i] && t < CT[i+1] )) && lerp "${CT[i]}" "${CP[i]}" "${CT[i+1]}" "${CP[i+1]}" "$t" && return
     done
     echo 255
 }
@@ -39,8 +38,7 @@ apply() {
     echo "$1" > "$HP_HWMON/pwm1"
 }
 
-cur_pwm=255
-apply $cur_pwm
+cur_pwm=255; apply $cur_pwm
 last_up_temp=999999
 
 while true; do
