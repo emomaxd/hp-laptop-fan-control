@@ -61,7 +61,14 @@ Points are linearly interpolated. Ramp-up is immediate. Ramp-down waits until te
 
 ## Getting the module
 
-The `pwm1` hwmon interface for Victus S boards landed in the in-tree `hp_wmi` driver in Linux 7.0. The driver implements a keep-alive to prevent firmware from resetting fan settings, along with fixes for a `u8` underflow that caused GPU fan spikes, a deadlock under concurrent sysfs writes, and a timer that fired prematurely after user interaction.
+The `pwm1` hwmon interface for Victus S boards landed in the in-tree `hp_wmi` driver in Linux 7.0. While investigating the burst issue on my own machine I found and fixed several bugs in the driver:
+
+- `u8` underflow in `gpu_delta` — GPU fan clamps at 100% when its target RPM is lower than the CPU fan's
+- keep-alive timer not reset on user interaction — fires 5s after a manual speed change instead of 90s later
+- `cancel_delayed_work_sync` called from within the work handler — deadlock under concurrent sysfs writes
+- missing mutex in hwmon read/write paths
+
+These are in Linux 7.0. The branch linked below contains them if you're on an older kernel.
 
 **Linux ≥ 7.0:** already included. Run the check at the top.
 
