@@ -61,14 +61,15 @@ Points are linearly interpolated. Ramp-up is immediate. Ramp-down waits until te
 
 ## Getting the module
 
-The `pwm1` hwmon interface for Victus S boards landed in the in-tree `hp_wmi` driver in Linux 7.0. While investigating the burst issue on my own machine I found and fixed several bugs in the driver:
+The `pwm1` hwmon interface for Victus S boards is in the in-tree `hp_wmi` driver. While working on this I submitted several fixes to the driver that are currently in linux-next and expected to land in 7.0–7.1:
 
-- `u8` underflow in `gpu_delta` — GPU fan clamps at 100% when its target RPM is lower than the CPU fan's
-- keep-alive timer not reset on user interaction — fires 5s after a manual speed change instead of 90s later
-- `cancel_delayed_work_sync` called from within the work handler — deadlock under concurrent sysfs writes
-- missing mutex in hwmon read/write paths
+- `platform/x86: hp-wmi: fix ignored return values in fan settings`
+- `platform/x86: hp-wmi: avoid cancel_delayed_work_sync from work handler`
+- `platform/x86: hp-wmi: use mod_delayed_work to reset keep-alive timer`
+- `platform/x86: hp-wmi: fix u8 underflow in gpu_delta calculation`
+- `platform/x86: hp-wmi: add locking for concurrent hwmon access`
 
-These are in Linux 7.0. The branch linked below contains them if you're on an older kernel.
+If you want these patches on an older kernel, the branch below has them applied on top of a recent stable base.
 
 **Linux ≥ 7.0:** already included. Run the check at the top.
 
