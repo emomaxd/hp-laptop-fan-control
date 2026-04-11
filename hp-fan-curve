@@ -8,7 +8,7 @@ usage() {
 usage: hp-fan-curve <command>
 
 commands:
-  status              live cpu temp, fan rpm, active preset
+  status              live cpu temp, fan rpm, pwm, active preset
   set <preset>        apply a preset — requires root
   toggle              toggle silent mode on/off (session-only, no root needed)
   edit                open $CONF in \$EDITOR — requires root
@@ -47,18 +47,6 @@ cmd_status() {
     printf "pwm:     %d/255\n" "$pwm"
 }
 
-write_preset() {
-    local name=$1; shift
-    cat > "$CONF" <<EOF
-# preset: $name
-CT=($*)
-EOF
-    shift ${#CT[@]}
-    cat >> "$CONF" <<EOF
-CP=($*)
-EOF
-}
-
 cmd_set() {
     need_root
     local name=$1
@@ -66,17 +54,11 @@ cmd_set() {
 
     case "$name" in
         silent)
-            ct="50000 60000 70000 82000 90000"
-            cp="0     20    60    150   220"
-            hyst=8000 ;;
+            ct="50 60 70 82 90"; cp="0 20 60 150 220"; hyst=8 ;;
         balanced)
-            ct="40000 50000 60000 72000 82000"
-            cp="0     30    80    170   240"
-            hyst=6000 ;;
+            ct="40 50 60 72 82"; cp="0 30 80 170 240"; hyst=6 ;;
         performance)
-            ct="35000 45000 58000 68000 78000"
-            cp="30    80    140   210   255"
-            hyst=4000 ;;
+            ct="35 45 58 68 78"; cp="30 80 140 210 255"; hyst=4 ;;
         *)
             echo "unknown preset: $name"
             echo "run 'hp-fan-curve presets' to list options"
@@ -87,10 +69,12 @@ cmd_set() {
 # preset: $name
 CT=($ct)
 CP=($cp)
-HYST_MC=$hyst
+HYST=$hyst
 POLL_SEC=2
 EOF
-    systemctl restart hp-fan-control 2>/dev/null && echo "applied: $name" || echo "applied: $name (systemd not available — restart daemon manually)"
+    systemctl restart hp-fan-control 2>/dev/null \
+        && echo "applied: $name" \
+        || echo "applied: $name (restart daemon manually)"
 }
 
 cmd_toggle() {
@@ -112,9 +96,9 @@ cmd_edit() {
 
 cmd_presets() {
     cat <<EOF
-silent       fan stop to 50°C, slow ramp      — idle, library
-balanced     fan stop to 40°C, default ramp   — daily use
-performance  fans on from 35°C, max at 78°C   — gaming, compiling
+silent       fan stop to 50°C, slow ramp     — idle, library
+balanced     fan stop to 40°C, default ramp  — daily use
+performance  fans on from 35°C, max at 78°C  — gaming, compiling
 EOF
 }
 

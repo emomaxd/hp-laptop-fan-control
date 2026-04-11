@@ -51,13 +51,13 @@ hp-fan-curve toggle              # toggle silent on/off — no root, bind to a k
 `/etc/hp-fan-control.conf`:
 
 ```sh
-CT=(40000 50000 60000 72000 82000)  # millidegrees
-CP=(0     30    80    170   240)    # PWM 0-255
-HYST_MC=6000
+CT=(40 50 60 72 82)  # °C
+CP=(0  30 80 170 240)  # PWM 0-255
+HYST=6               # °C — ramp-down hysteresis
 POLL_SEC=2
 ```
 
-Points are linearly interpolated. Ramp-up is immediate. Ramp-down waits until temp drops `HYST_MC` below the last ramp-up point — this prevents rapid toggling at threshold boundaries.
+Points are linearly interpolated. Ramp-up is immediate. Ramp-down waits until temp drops `HYST` degrees below the last ramp-up point — prevents rapid toggling at threshold boundaries.
 
 ## Getting the module
 
