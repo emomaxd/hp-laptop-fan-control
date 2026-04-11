@@ -1,0 +1,12 @@
+#!/bin/bash
+# Toggle "library mode" (fans off) on/off
+FLAG=/tmp/hp-fan-silent
+if [[ -f "$FLAG" ]]; then
+    rm "$FLAG"
+    notify-send "Fan" "Normal mode" --icon=dialog-information 2>/dev/null || true
+    echo "Fan: normal mode"
+else
+    touch "$FLAG"
+    notify-send "Fan" "Silent mode (fans off)" --icon=dialog-information 2>/dev/null || true
+    echo "Fan: silent mode"
+fi
