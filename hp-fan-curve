@@ -92,14 +92,14 @@ cmd_edit() {
     need_root
     [[ ! -f "$CONF" ]] && cmd_set balanced >/dev/null
     ${EDITOR:-nano} "$CONF"
-    systemctl restart hp-fan-control 2>/dev/null
+    systemctl restart hp-fan-control || echo "warning: failed to restart daemon — do it manually"
 }
 
 cmd_presets() {
     cat <<EOF
-silent       minimum speed to 50°C, slow ramp  — idle, library
-balanced     minimum speed to 40°C            — daily use
-performance  fans on from 35°C, max at 78°C   — gaming, compiling
+silent       min speed to 50°C, max at 90°C  — idle, library
+balanced     min speed to 40°C, max at 82°C  — daily use
+performance  fans on at 35°C, max at 78°C    — gaming, compiling
 EOF
 }
 

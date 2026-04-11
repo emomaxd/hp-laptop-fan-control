@@ -9,7 +9,7 @@ HYST=6
 POLL_SEC=2
 
 if [[ -f "$CONF" ]]; then
-    if ! source "$CONF" 2>/dev/null; then
+    if ! source "$CONF"; then
         echo "warning: failed to source $CONF, using defaults" >&2
     fi
 fi

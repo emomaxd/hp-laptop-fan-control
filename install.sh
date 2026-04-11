@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${PREFIX:-/usr/local}"
 
 [[ $EUID -eq 0 ]] || { echo "error: run as root"; exit 1; }
+command -v systemctl >/dev/null 2>&1 || { echo "error: systemctl not found — not a systemd system?"; exit 1; }
 
 HP_HWMON=$(grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
 [[ -d "$HP_HWMON" ]] || {
