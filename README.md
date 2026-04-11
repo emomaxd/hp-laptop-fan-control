@@ -1,6 +1,6 @@
 # hp-victus-fan-control
 
-HP Victus/Omen fans on Linux burst unpredictably because the firmware resets fan settings every ~120s and the out-of-tree `hp_wmi` driver has no mechanism to fight it. The in-tree driver (Linux ≥7.0) fixes this with a keep-alive that re-applies settings every 90s. This daemon sits on top of that and gives you a smooth, interpolated fan curve instead of the firmware's aggressive default.
+HP Victus/Omen fans on Linux burst unpredictably because the firmware resets fan settings every ~120s and the out-of-tree `hp_wmi` driver has no mechanism to fight it. The in-tree driver implements a keep-alive that re-applies settings every 90s — along with fixes for a deadlock, a GPU fan spike bug, and a few other issues, currently queued in `platform-drivers-x86/review-ilpo-next`. This daemon sits on top of that and gives you a smooth, interpolated fan curve instead of the firmware's aggressive default.
 
 ## Does it work on my machine?
 
