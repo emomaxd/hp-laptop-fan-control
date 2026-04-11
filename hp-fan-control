@@ -23,7 +23,11 @@ CPU_TEMP=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/n
 [[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
 [[ -f "$CPU_TEMP" ]] || { echo "coretemp not found"     >&2; exit 1; }
 
-lerp() { echo $(( $2 + ($5 - $1) * ($4 - $2) / ($3 - $1) )); }
+lerp() {
+    local dt=$(( $3 - $1 ))
+    (( dt == 0 )) && echo "$2" && return
+    echo $(( $2 + ($5 - $1) * ($4 - $2) / dt ))
+}
 
 pwm_for_temp() {
     local t=$1 n=${#CT[@]}

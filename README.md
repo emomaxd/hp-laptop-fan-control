@@ -32,7 +32,7 @@ If the check above failed, get the patched module first — see [Getting the mod
 hp-fan-curve status              # live: temp, fan rpm, pwm, active preset
 hp-fan-curve presets             # list presets
 sudo hp-fan-curve set balanced   # default
-sudo hp-fan-curve set silent     # fan stop up to 50°C — library/idle
+sudo hp-fan-curve set silent     # minimum speed up to 50°C — library/idle
 sudo hp-fan-curve set performance
 sudo hp-fan-curve edit           # edit /etc/hp-fan-control.conf in $EDITOR
 hp-fan-curve toggle              # toggle silent on/off — no root, bind to a key
@@ -40,8 +40,8 @@ hp-fan-curve toggle              # toggle silent on/off — no root, bind to a k
 
 ## Presets
 
-| preset | fan stop until | max speed at | hysteresis |
-|--------|----------------|--------------|------------|
+| preset | min speed until | max speed at | hysteresis |
+|--------|-----------------|--------------|------------|
 | silent | 50°C | 90°C | 8°C |
 | balanced | 40°C | 82°C | 6°C |
 | performance | 35°C | 78°C | 4°C |
@@ -69,25 +69,25 @@ The `pwm1` hwmon interface for Victus S boards is in the in-tree `hp_wmi` driver
 - `platform/x86: hp-wmi: fix u8 underflow in gpu_delta calculation`
 - `platform/x86: hp-wmi: add locking for concurrent hwmon access`
 
-If you want these patches on an older kernel, the branch below has them applied on top of a recent stable base.
-
 **Linux ≥ 7.0 (once merged):** run the check at the top to verify.
 
-**Older kernels:**
+**Older kernels:** build the module from the branch below and load it on top of your running kernel.
 
 ```sh
 git clone https://github.com/emomaxd/linux -b hp-wmi-fixes --depth=1
 cd linux
 make -C /lib/modules/$(uname -r)/build M=$(pwd)/drivers/platform/x86/hp modules
-sudo insmod drivers/platform/x86/hp/hp-wmi.ko
+sudo rmmod hp_wmi 2>/dev/null; sudo insmod drivers/platform/x86/hp/hp-wmi.ko
 ```
 
-To persist across reboots:
+To survive reboots (until next kernel update):
 
 ```sh
 sudo cp drivers/platform/x86/hp/hp-wmi.ko /lib/modules/$(uname -r)/updates/hp-wmi.ko
 sudo depmod -a
 ```
+
+> This only persists for the current kernel version. After a kernel update, rebuild the module.
 
 ## Uninstall
 

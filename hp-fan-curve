@@ -22,10 +22,10 @@ find_hwmon() {
     grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs dirname
 }
 
-HP_HWMON=$(find_hwmon)
-CPU_TEMP=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
-
 cmd_status() {
+    local HP_HWMON CPU_TEMP
+    HP_HWMON=$(find_hwmon)
+    CPU_TEMP=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
     local preset="custom"
     [[ -f "$CONF" ]] && grep -q "^# preset:" "$CONF" && preset=$(grep "^# preset:" "$CONF" | cut -d' ' -f3)
     [[ -f "$SILENT_FLAG" ]] && preset="silent (session)"
