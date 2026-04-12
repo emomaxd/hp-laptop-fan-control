@@ -55,6 +55,7 @@ apply() {
             return 0
         fi
     done
+    echo "warning: failed to set pwm1_enable after 5 attempts" >&2
 }
 
 cleanup() {

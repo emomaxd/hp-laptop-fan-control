@@ -108,7 +108,7 @@ cmd_pwm() {
     need_root
     local val=$1
     [[ -z "$val" ]] && { echo "usage: hp-fan-curve pwm <0-255>"; exit 1; }
-    (( val >= 0 && val <= 255 )) 2>/dev/null || { echo "error: value must be 0-255"; exit 1; }
+    [[ "$val" =~ ^[0-9]+$ ]] && (( val <= 255 )) || { echo "error: value must be 0-255"; exit 1; }
 
     local HP_HWMON
     HP_HWMON=$(find_hwmon)
