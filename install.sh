@@ -7,7 +7,7 @@ PREFIX="${PREFIX:-/usr/local}"
 [[ $EUID -eq 0 ]] || { echo "error: run as root"; exit 1; }
 command -v systemctl >/dev/null 2>&1 || { echo "error: systemctl not found — not a systemd system?"; exit 1; }
 
-HP_HWMON=$(grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+HP_HWMON=$(grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs -r dirname)
 [[ -d "$HP_HWMON" ]] || {
     echo "error: hp-wmi hwmon not found — patched module not loaded?"
     echo "  lsmod | grep hp_wmi"
