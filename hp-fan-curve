@@ -10,6 +10,7 @@ usage: hp-fan-curve <command>
 commands:
   status              live cpu temp, fan rpm, pwm, active preset
   set <preset>        apply a preset — requires root
+  pwm <0-255>         lock fans at a fixed pwm value — requires root
   toggle              toggle silent mode on/off (session-only, no root needed)
   edit                open $CONF in \$EDITOR — requires root
   presets             list available presets
@@ -19,7 +20,7 @@ EOF
 need_root() { [[ $EUID -eq 0 ]] || { echo "error: requires root"; exit 1; }; }
 
 find_hwmon() {
-    grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs dirname
+    grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs -r dirname
 }
 
 cmd_status() {
@@ -103,9 +104,27 @@ performance  fans on at 35°C, max at 78°C    — gaming, compiling
 EOF
 }
 
+cmd_pwm() {
+    need_root
+    local val=$1
+    [[ -z "$val" ]] && { echo "usage: hp-fan-curve pwm <0-255>"; exit 1; }
+    (( val >= 0 && val <= 255 )) 2>/dev/null || { echo "error: value must be 0-255"; exit 1; }
+
+    local HP_HWMON
+    HP_HWMON=$(find_hwmon)
+    [[ -d "$HP_HWMON" ]] || { echo "error: hp hwmon not found"; exit 1; }
+
+    systemctl stop hp-fan-control 2>/dev/null
+    echo 1      > "$HP_HWMON/pwm1_enable"
+    echo "$val" > "$HP_HWMON/pwm1"
+    echo "pwm locked: $val/255 (daemon stopped)"
+    echo "warning: no thermal protection — run 'hp-fan-curve set <preset>' to restore"
+}
+
 case "$1" in
     status)   cmd_status ;;
     set)      cmd_set "$2" ;;
+    pwm)      cmd_pwm "$2" ;;
     toggle)   cmd_toggle ;;
     edit)     cmd_edit ;;
     presets)  cmd_presets ;;
