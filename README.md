@@ -1,6 +1,8 @@
-# hp-victus-fan-control
+# hp-laptop-fan-control
 
-HP Victus/Omen fans on Linux burst unpredictably because the firmware resets fan settings every ~120s and the out-of-tree `hp_wmi` driver has no mechanism to fight it. The in-tree driver has a keep-alive that re-applies settings every 90s, but it had several bugs of its own — a deadlock, a GPU fan spike, and a timer that misfired. Those are fixed in patches currently queued in `platform-drivers-x86/review-ilpo-next`. This daemon sits on top of that and gives you a smooth, interpolated fan curve instead of the firmware's aggressive default.
+Fan curve daemon for HP Victus/Omen laptops on Linux. The firmware resets fan settings periodically and ramps aggressively. This daemon re-applies a configurable PWM curve every poll cycle to keep fans under control.
+
+Requires the in-tree `hp_wmi` driver with hwmon fan support — see [Getting the module](#getting-the-module) if you don't have it.
 
 ## Does it work on my machine?
 
@@ -19,8 +21,8 @@ Supported boards (`cat /sys/class/dmi/id/board_name`):
 ## Install
 
 ```sh
-git clone https://github.com/emomaxd/hp-victus-fan-control
-cd hp-victus-fan-control
+git clone https://github.com/emomaxd/hp-laptop-fan-control
+cd hp-laptop-fan-control
 sudo ./install.sh
 ```
 
