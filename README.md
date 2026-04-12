@@ -34,6 +34,7 @@ hp-fan-curve presets             # list presets
 sudo hp-fan-curve set balanced   # default
 sudo hp-fan-curve set silent     # minimum speed up to 50°C — library/idle
 sudo hp-fan-curve set performance
+sudo hp-fan-curve pwm 120       # lock fans at fixed pwm (stops daemon, no thermal protection)
 sudo hp-fan-curve edit           # edit /etc/hp-fan-control.conf in $EDITOR
 hp-fan-curve toggle              # toggle silent on/off — no root, bind to a key
 ```
