@@ -20,7 +20,7 @@ HYST_MC=$(( HYST * 1000 ))
 (( POLL_SEC > 0 )) || POLL_SEC=2
 
 find_hwmon() {
-    grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs dirname
+    grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs -r dirname
 }
 
 HP_HWMON=$(find_hwmon)
@@ -47,8 +47,14 @@ pwm_for_temp() {
 }
 
 apply() {
-    echo 1    > "$HP_HWMON/pwm1_enable"
-    echo "$1" > "$HP_HWMON/pwm1"
+    local i
+    for ((i=0; i<5; i++)); do
+        echo 1 > "$HP_HWMON/pwm1_enable" 2>/dev/null
+        if [[ "$(<"$HP_HWMON/pwm1_enable")" == "1" ]]; then
+            echo "$1" > "$HP_HWMON/pwm1"
+            return 0
+        fi
+    done
 }
 
 cleanup() {
@@ -63,19 +69,20 @@ last_up_temp=999999
 while true; do
     sleep $POLL_SEC
 
-    if [[ -f "$SILENT_FLAG" ]]; then
-        (( cur_pwm != 0 )) && { apply 0; cur_pwm=0; }
-        continue
-    fi
-
-    temp=$(< "$CPU_TEMP" 2>/dev/null)
+    temp=$(<"$CPU_TEMP")
     [[ -z "$temp" ]] && continue
 
     target=$(pwm_for_temp "$temp")
 
-    if (( target > cur_pwm )); then
-        apply $target; cur_pwm=$target; last_up_temp=$temp
-    elif (( target < cur_pwm && temp <= last_up_temp - HYST_MC )); then
-        apply $target; cur_pwm=$target; last_up_temp=$temp
+    if [[ -f "$SILENT_FLAG" ]] && (( temp < CT[${#CT[@]}-1] )); then
+        target=0
     fi
+
+    if (( target > cur_pwm )); then
+        cur_pwm=$target; last_up_temp=$temp
+    elif (( target < cur_pwm && temp <= last_up_temp - HYST_MC )); then
+        cur_pwm=$target; last_up_temp=$temp
+    fi
+
+    apply "$cur_pwm"
 done
