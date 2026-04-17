@@ -1,28 +1,42 @@
 #!/bin/bash
 
 CONF=/etc/hp-fan-control.conf
-SILENT_FLAG=/tmp/hp-fan-silent
+SILENT_FLAG=/var/lib/hp-fan-control/silent
 DRY_RUN=0
+MAINPID=$$
+INOTIFY_PID=
 
 [[ "$1" == "--dry-run" ]] && DRY_RUN=1
 
-CT=(40 50 60 72 82)
-CP=(0  30 80 170 240)
-HYST=6
-POLL_SEC=2
-FOLLOW_PLATFORM_PROFILE=0
-RPM_STALL_WARN=1
+CT=() CP=() GPU_CT=() GPU_CP=()
+HYST=6; POLL_SEC=2; HYST_MC=6000
+FOLLOW_PLATFORM_PROFILE=0; RPM_STALL_WARN=1
 
-if [[ -f "$CONF" ]]; then
-    if ! source "$CONF"; then
-        echo "warning: failed to source $CONF, using defaults" >&2
+load_conf() {
+    CT=(40 50 60 72 82)
+    CP=(0  30 80 170 240)
+    GPU_CT=()
+    GPU_CP=()
+    HYST=6
+    POLL_SEC=2
+    FOLLOW_PLATFORM_PROFILE=0
+    RPM_STALL_WARN=1
+
+    if [[ -f "$CONF" ]]; then
+        source "$CONF" || echo "warning: failed to source $CONF, using defaults" >&2
     fi
-fi
 
-for i in "${!CT[@]}"; do CT[$i]=$(( CT[i] * 1000 )); done
-HYST_MC=$(( HYST * 1000 ))
+    for i in "${!CT[@]}"; do CT[$i]=$(( CT[i] * 1000 )); done
+    HYST_MC=$(( HYST * 1000 ))
+    (( POLL_SEC > 0 )) || POLL_SEC=2
 
-(( POLL_SEC > 0 )) || POLL_SEC=2
+    if (( ${#GPU_CT[@]} == 0 )); then
+        GPU_CT=("${CT[@]}")
+        GPU_CP=("${CP[@]}")
+    else
+        for i in "${!GPU_CT[@]}"; do GPU_CT[$i]=$(( GPU_CT[i] * 1000 )); done
+    fi
+}
 
 find_hwmon() {
     grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs -r dirname
@@ -48,6 +62,8 @@ GPU_TEMP=$(find_gpu_temp)
 [[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
 [[ -f "$CPU_TEMP" ]] || { echo "coretemp not found"     >&2; exit 1; }
 
+load_conf
+
 lerp() {
     local dt=$(( $3 - $1 ))
     (( dt == 0 )) && echo "$2" && return
@@ -55,35 +71,34 @@ lerp() {
 }
 
 pwm_for_temp() {
-    local t=$1 n=${#CT[@]}
-    (( t <= CT[0] ))   && echo 0   && return
-    (( t >= CT[n-1] )) && echo 255 && return
+    local -n _ct=$1 _cp=$2
+    local t=$3 n=${#_ct[@]}
+    (( t <= _ct[0] ))   && echo 0   && return
+    (( t >= _ct[n-1] )) && echo 255 && return
     local i
     for (( i=0; i < n-1; i++ )); do
-        (( t >= CT[i] && t < CT[i+1] )) && lerp "${CT[i]}" "${CP[i]}" "${CT[i+1]}" "${CP[i+1]}" "$t" && return
+        (( t >= _ct[i] && t < _ct[i+1] )) && lerp "${_ct[i]}" "${_cp[i]}" "${_ct[i+1]}" "${_cp[i+1]}" "$t" && return
     done
     echo 255
 }
 
-# Sets CT/CP/HYST_MC from a platform profile name (values already in millidegrees)
 profile_to_curves() {
     case "$1" in
         low-power)
             CT=(50000 60000 70000 82000 90000)
             CP=(0 20 60 150 220)
-            HYST_MC=8000
-            POLL_SEC=4 ;;
+            HYST_MC=8000; POLL_SEC=4 ;;
         balanced)
             CT=(40000 50000 60000 72000 82000)
             CP=(0 30 80 170 240)
-            HYST_MC=6000
-            POLL_SEC=2 ;;
+            HYST_MC=6000; POLL_SEC=2 ;;
         performance)
             CT=(35000 45000 58000 68000 78000)
             CP=(30 80 140 210 255)
-            HYST_MC=4000
-            POLL_SEC=1 ;;
+            HYST_MC=4000; POLL_SEC=1 ;;
     esac
+    GPU_CT=("${CT[@]}")
+    GPU_CP=("${CP[@]}")
 }
 
 apply() {
@@ -103,16 +118,46 @@ apply() {
     return 1
 }
 
+start_inotify() {
+    command -v inotifywait &>/dev/null || return
+    [[ -f "$CONF" ]] || return
+    ( inotifywait -q -m -e close_write "$CONF" 2>/dev/null | while read -r _; do
+          kill -USR1 "$MAINPID" 2>/dev/null
+      done ) &
+    INOTIFY_PID=$!
+}
+
+on_reload() {
+    echo "info: reloading conf" >&2
+    load_conf
+    last_up_temp=999999
+    last_profile=""
+}
+
 cleanup() {
+    [[ -n "$INOTIFY_PID" ]] && kill "$INOTIFY_PID" 2>/dev/null
     if (( ! DRY_RUN )); then
         [[ -d "$HP_HWMON" ]] && echo 2 > "$HP_HWMON/pwm1_enable"
     fi
     exit
 }
+
+trap on_reload USR1
 trap cleanup SIGTERM SIGINT
 
-cur_pwm=255; apply $cur_pwm 0 0
-last_up_temp=999999
+start_inotify
+
+# Cold start: set correct PWM immediately without waiting one poll cycle
+cpu_temp_init=$(<"$CPU_TEMP" 2>/dev/null)
+if [[ -n "$cpu_temp_init" ]]; then
+    cur_pwm=$(pwm_for_temp CT CP "$cpu_temp_init")
+    last_up_temp=$cpu_temp_init
+else
+    cur_pwm=255
+    last_up_temp=999999
+fi
+apply "$cur_pwm" "${cpu_temp_init:-0}" "0"
+
 last_profile=""
 stall_cycles=0
 
@@ -132,25 +177,31 @@ while true; do
     cpu_temp=$(<"$CPU_TEMP")
     [[ -z "$cpu_temp" ]] && continue
 
-    temp=$cpu_temp
-    if [[ -n "$GPU_TEMP" && -f "$GPU_TEMP" ]]; then
-        gpu_temp=$(<"$GPU_TEMP")
-        (( gpu_temp > temp )) && temp=$gpu_temp
+    gpu_temp=0
+    [[ -n "$GPU_TEMP" && -f "$GPU_TEMP" ]] && gpu_temp=$(<"$GPU_TEMP")
+
+    cpu_target=$(pwm_for_temp CT CP "$cpu_temp")
+    gpu_target=0
+    (( gpu_temp > 0 )) && gpu_target=$(pwm_for_temp GPU_CT GPU_CP "$gpu_temp")
+    target=$(( cpu_target > gpu_target ? cpu_target : gpu_target ))
+
+    if [[ -f "$SILENT_FLAG" ]]; then
+        local_cpu_below=$(( cpu_temp < CT[${#CT[@]}-1] ))
+        local_gpu_below=$(( gpu_temp == 0 || gpu_temp < GPU_CT[${#GPU_CT[@]}-1] ))
+        (( local_cpu_below && local_gpu_below )) && target=0
     fi
 
-    target=$(pwm_for_temp "$temp")
-
-    if [[ -f "$SILENT_FLAG" ]] && (( temp < CT[${#CT[@]}-1] )); then
-        target=0
-    fi
+    effective_temp=$(( cpu_temp > gpu_temp ? cpu_temp : gpu_temp ))
 
     if (( target > cur_pwm )); then
-        cur_pwm=$target; last_up_temp=$temp
-    elif (( target < cur_pwm && temp <= last_up_temp - HYST_MC )); then
-        cur_pwm=$target; last_up_temp=$temp
+        cur_pwm=$target
+        last_up_temp=$effective_temp
+    elif (( target < cur_pwm && effective_temp <= last_up_temp - HYST_MC )); then
+        cur_pwm=$target
+        last_up_temp=$effective_temp
     fi
 
-    if apply "$cur_pwm" "$cpu_temp" "${gpu_temp:-0}"; then
+    if apply "$cur_pwm" "$cpu_temp" "$gpu_temp"; then
         if (( RPM_STALL_WARN && cur_pwm > 80 )); then
             (( stall_cycles++ ))
             if (( stall_cycles >= 5 )); then
