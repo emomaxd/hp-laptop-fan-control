@@ -1,7 +1,7 @@
 #!/bin/bash
 
 CONF=/etc/hp-fan-control.conf
-SILENT_FLAG=/tmp/hp-fan-silent
+SILENT_FLAG=/var/lib/hp-fan-control/silent
 
 usage() {
     cat <<EOF
@@ -13,7 +13,8 @@ commands:
   set <preset>        apply a preset — requires root
   follow              auto-track platform power profile — requires root
   pwm <0-255>         lock fans at a fixed pwm value — requires root
-  toggle              toggle silent mode on/off (session-only, no root needed)
+  toggle              toggle silent mode on/off (persists across reboots)
+  log [N]             show last N journal entries (default 50)
   edit                open $CONF in \$EDITOR — requires root
   presets             list available presets
 EOF
@@ -47,9 +48,9 @@ print_status() {
     local preset="custom"
     [[ -f "$CONF" ]] && grep -q "^# preset:" "$CONF" && preset=$(grep "^# preset:" "$CONF" | cut -d' ' -f3)
     [[ -f "$CONF" ]] && grep -q "^FOLLOW_PLATFORM_PROFILE=1" "$CONF" && preset="auto (follow profile)"
-    [[ -f "$SILENT_FLAG" ]] && preset="silent (session)"
+    [[ -f "$SILENT_FLAG" ]] && preset+=" [silent]"
 
-    local cpu_mc fan1 fan2 pwm mode platform_prof
+    local cpu_mc fan1 fan2 pwm mode
     cpu_mc=$(cat "$CPU_TEMP" 2>/dev/null); cpu_mc=${cpu_mc:-0}
     fan1=$(cat "$HP_HWMON/fan1_input" 2>/dev/null); fan1=${fan1:-0}
     fan2=$(cat "$HP_HWMON/fan2_input" 2>/dev/null); fan2=${fan2:-0}
@@ -61,12 +62,11 @@ print_status() {
     printf "mode:    %s\n" "$mode"
 
     if [[ -f /sys/firmware/acpi/platform_profile ]]; then
-        platform_prof=$(<"/sys/firmware/acpi/platform_profile")
-        printf "profile: %s\n" "$platform_prof"
+        printf "profile: %s\n" "$(<"/sys/firmware/acpi/platform_profile")"
     fi
 
     echo   "---"
-    printf "cpu:     %d°C\n"   "$(( cpu_mc / 1000 ))"
+    printf "cpu:     %d°C\n" "$(( cpu_mc / 1000 ))"
 
     if [[ -n "$GPU_TEMP_PATH" && -f "$GPU_TEMP_PATH" ]]; then
         local gpu_mc
@@ -146,12 +146,17 @@ EOF
 
 cmd_toggle() {
     if [[ -f "$SILENT_FLAG" ]]; then
-        rm "$SILENT_FLAG"
+        rm -f "$SILENT_FLAG"
         notify-send "fan" "normal" 2>/dev/null; echo "fan: normal"
     else
-        touch "$SILENT_FLAG"
+        touch "$SILENT_FLAG" 2>/dev/null || { echo "error: cannot write $SILENT_FLAG"; exit 1; }
         notify-send "fan" "silent" 2>/dev/null; echo "fan: silent"
     fi
+}
+
+cmd_log() {
+    local lines=${1:-50}
+    journalctl -u hp-fan-control -n "$lines" --no-pager -o short
 }
 
 cmd_edit() {
@@ -163,9 +168,9 @@ cmd_edit() {
 
 cmd_presets() {
     cat <<EOF
-silent       min speed to 50°C, max at 90°C  — idle, library   (poll 4s)
-balanced     min speed to 40°C, max at 82°C  — daily use        (poll 2s)
-performance  fans on at 35°C, max at 78°C    — gaming, compiling (poll 1s)
+silent       min speed to 50°C, max at 90°C  — idle, library    (poll 4s)
+balanced     min speed to 40°C, max at 82°C  — daily use         (poll 2s)
+performance  fans on at 35°C, max at 78°C    — gaming, compiling  (poll 1s)
 EOF
 }
 
@@ -192,6 +197,7 @@ case "$1" in
     follow)   cmd_follow ;;
     pwm)      cmd_pwm "$2" ;;
     toggle)   cmd_toggle ;;
+    log)      cmd_log "$2" ;;
     edit)     cmd_edit ;;
     presets)  cmd_presets ;;
     *)        usage ;;
