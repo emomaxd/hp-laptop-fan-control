@@ -1,6 +1,6 @@
 [Unit]
 Description=HP Victus fan control
-After=multi-user.target
+After=systemd-modules-load.service
 
 [Service]
 Type=simple
@@ -8,6 +8,10 @@ ExecStart=HP_FAN_CONTROL_BIN
 Restart=always
 RestartSec=3
 TimeoutStopSec=5
+StandardOutput=journal
+StandardError=journal
+StateDirectory=hp-fan-control
+StateDirectoryMode=0777
 
 [Install]
 WantedBy=multi-user.target

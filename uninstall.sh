@@ -12,5 +12,6 @@ rm -f "$PREFIX/bin/hp-fan-curve"
 if [[ -f /etc/hp-fan-control.conf ]]; then
     echo "leaving /etc/hp-fan-control.conf in place — remove manually if not needed"
 fi
+rm -rf /var/lib/hp-fan-control
 systemctl daemon-reload
 echo "uninstalled"
