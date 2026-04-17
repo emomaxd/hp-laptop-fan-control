@@ -31,23 +31,42 @@ If the check above failed, get the patched module first — see [Getting the mod
 ## Usage
 
 ```sh
-hp-fan-curve status              # live: temp, fan rpm, pwm, active preset
+hp-fan-curve status              # live: cpu/gpu temp, fan rpm, pwm, active preset
+hp-fan-curve status -w           # watch mode — refresh every 2s
+hp-fan-curve status -w 1         # watch mode — refresh every 1s
 hp-fan-curve presets             # list presets
 sudo hp-fan-curve set balanced   # default
 sudo hp-fan-curve set silent     # minimum speed up to 50°C — library/idle
 sudo hp-fan-curve set performance
-sudo hp-fan-curve pwm 120       # lock fans at fixed pwm (stops daemon, no thermal protection)
+sudo hp-fan-curve follow         # auto-track system power profile (power-profiles-daemon / TLP)
+sudo hp-fan-curve pwm 120        # lock fans at fixed pwm (stops daemon, no thermal protection)
 sudo hp-fan-curve edit           # edit /etc/hp-fan-control.conf in $EDITOR
 hp-fan-curve toggle              # toggle silent on/off — no root, bind to a key
 ```
 
 ## Presets
 
-| preset | min speed until | max speed at | hysteresis |
-|--------|-----------------|--------------|------------|
-| silent | 50°C | 90°C | 8°C |
-| balanced | 40°C | 82°C | 6°C |
-| performance | 35°C | 78°C | 4°C |
+| preset | min speed until | max speed at | hysteresis | poll |
+|--------|-----------------|--------------|------------|------|
+| silent | 50°C | 90°C | 8°C | 4s |
+| balanced | 40°C | 82°C | 6°C | 2s |
+| performance | 35°C | 78°C | 4°C | 1s |
+
+## Power profile tracking
+
+```sh
+sudo hp-fan-curve follow
+```
+
+Automatically maps the system's active power profile to the matching fan preset. Works with `power-profiles-daemon`, `TLP`, `auto-cpufreq`, or anything that writes `/sys/firmware/acpi/platform_profile`:
+
+| platform profile | fan preset used |
+|------------------|-----------------|
+| `low-power` | silent |
+| `balanced` | balanced |
+| `performance` | performance |
+
+Switching back to a fixed preset (`hp-fan-curve set <preset>`) disables follow mode.
 
 ## Custom curve
 
@@ -58,6 +77,14 @@ CT=(40 50 60 72 82)  # °C
 CP=(0  30 80 170 240)  # PWM 0-255
 HYST=6               # °C — ramp-down hysteresis
 POLL_SEC=2
+FOLLOW_PLATFORM_PROFILE=0  # set to 1 to auto-track power profile
+RPM_STALL_WARN=1           # warn in journal if fan stalls at high PWM
+```
+
+Pass `--dry-run` to the daemon to print calculated PWM values without writing:
+
+```sh
+sudo hp-fan-control --dry-run
 ```
 
 Points are linearly interpolated. Ramp-up is immediate. Ramp-down waits until temp drops `HYST` degrees below the last ramp-up point — prevents rapid toggling at threshold boundaries.
