@@ -41,7 +41,9 @@ sudo hp-fan-curve set performance
 sudo hp-fan-curve follow         # auto-track system power profile (power-profiles-daemon / TLP)
 sudo hp-fan-curve pwm 120        # lock fans at fixed pwm (stops daemon, no thermal protection)
 sudo hp-fan-curve edit           # edit /etc/hp-fan-control.conf in $EDITOR
-hp-fan-curve toggle              # toggle silent on/off — no root, bind to a key
+hp-fan-curve toggle              # toggle silent on/off — no root, persists across reboots
+hp-fan-curve log                 # show last 50 journal entries
+hp-fan-curve log 100             # show last 100 journal entries
 ```
 
 ## Presets
@@ -73,21 +75,28 @@ Switching back to a fixed preset (`hp-fan-curve set <preset>`) disables follow m
 `/etc/hp-fan-control.conf`:
 
 ```sh
-CT=(40 50 60 72 82)  # °C
-CP=(0  30 80 170 240)  # PWM 0-255
-HYST=6               # °C — ramp-down hysteresis
+CT=(40 50 60 72 82)    # CPU temp thresholds °C
+CP=(0  30 80 170 240)  # PWM 0-255 at each threshold
+HYST=6                 # °C — ramp-down hysteresis
 POLL_SEC=2
+
+# Optional: separate GPU curve (defaults to CPU curve if omitted)
+GPU_CT=(45 55 65 75 85)
+GPU_CP=(0  40 100 180 255)
+
 FOLLOW_PLATFORM_PROFILE=0  # set to 1 to auto-track power profile
 RPM_STALL_WARN=1           # warn in journal if fan stalls at high PWM
 ```
 
-Pass `--dry-run` to the daemon to print calculated PWM values without writing:
+The daemon takes `max(cpu_pwm, gpu_pwm)` each cycle, so whichever sensor is hotter drives the fans. Points are linearly interpolated. Ramp-up is immediate. Ramp-down waits until temp drops `HYST` degrees below the last ramp-up point.
+
+If `inotify-tools` is installed, the daemon reloads conf automatically when it changes — no restart needed. Without it, `sudo systemctl restart hp-fan-control` applies changes.
+
+Pass `--dry-run` to print calculated PWM values without writing:
 
 ```sh
 sudo hp-fan-control --dry-run
 ```
-
-Points are linearly interpolated. Ramp-up is immediate. Ramp-down waits until temp drops `HYST` degrees below the last ramp-up point — prevents rapid toggling at threshold boundaries.
 
 ## Getting the module
 
