@@ -2,11 +2,16 @@
 
 CONF=/etc/hp-fan-control.conf
 SILENT_FLAG=/tmp/hp-fan-silent
+DRY_RUN=0
+
+[[ "$1" == "--dry-run" ]] && DRY_RUN=1
 
 CT=(40 50 60 72 82)
 CP=(0  30 80 170 240)
 HYST=6
 POLL_SEC=2
+FOLLOW_PLATFORM_PROFILE=0
+RPM_STALL_WARN=1
 
 if [[ -f "$CONF" ]]; then
     if ! source "$CONF"; then
@@ -23,8 +28,22 @@ find_hwmon() {
     grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs -r dirname
 }
 
+find_gpu_temp() {
+    local f name dir
+    for f in /sys/class/hwmon/*/name; do
+        [[ -f "$f" ]] || continue
+        name=$(<"$f")
+        dir=$(dirname "$f")
+        case "$name" in
+            nvidia|amdgpu|radeon)
+                [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return ;;
+        esac
+    done
+}
+
 HP_HWMON=$(find_hwmon)
 CPU_TEMP=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
+GPU_TEMP=$(find_gpu_temp)
 
 [[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
 [[ -f "$CPU_TEMP" ]] || { echo "coretemp not found"     >&2; exit 1; }
@@ -46,7 +65,32 @@ pwm_for_temp() {
     echo 255
 }
 
+# Sets CT/CP/HYST_MC from a platform profile name (values already in millidegrees)
+profile_to_curves() {
+    case "$1" in
+        low-power)
+            CT=(50000 60000 70000 82000 90000)
+            CP=(0 20 60 150 220)
+            HYST_MC=8000
+            POLL_SEC=4 ;;
+        balanced)
+            CT=(40000 50000 60000 72000 82000)
+            CP=(0 30 80 170 240)
+            HYST_MC=6000
+            POLL_SEC=2 ;;
+        performance)
+            CT=(35000 45000 58000 68000 78000)
+            CP=(30 80 140 210 255)
+            HYST_MC=4000
+            POLL_SEC=1 ;;
+    esac
+}
+
 apply() {
+    if (( DRY_RUN )); then
+        echo "dry-run: pwm=$1 (cpu=${2}mc gpu=${3}mc)" >&2
+        return 0
+    fi
     local i
     for ((i=0; i<5; i++)); do
         echo 1 > "$HP_HWMON/pwm1_enable" 2>/dev/null
@@ -56,22 +100,43 @@ apply() {
         fi
     done
     echo "warning: failed to set pwm1_enable after 5 attempts" >&2
+    return 1
 }
 
 cleanup() {
-    [[ -d "$HP_HWMON" ]] && echo 2 > "$HP_HWMON/pwm1_enable"
+    if (( ! DRY_RUN )); then
+        [[ -d "$HP_HWMON" ]] && echo 2 > "$HP_HWMON/pwm1_enable"
+    fi
     exit
 }
 trap cleanup SIGTERM SIGINT
 
-cur_pwm=255; apply $cur_pwm
+cur_pwm=255; apply $cur_pwm 0 0
 last_up_temp=999999
+last_profile=""
+stall_cycles=0
 
 while true; do
     sleep $POLL_SEC
 
-    temp=$(<"$CPU_TEMP")
-    [[ -z "$temp" ]] && continue
+    if (( FOLLOW_PLATFORM_PROFILE )) && [[ -f /sys/firmware/acpi/platform_profile ]]; then
+        prof=$(<"/sys/firmware/acpi/platform_profile")
+        if [[ "$prof" != "$last_profile" ]]; then
+            profile_to_curves "$prof"
+            last_profile=$prof
+            last_up_temp=999999
+            echo "info: platform profile -> '$prof', updated fan curve" >&2
+        fi
+    fi
+
+    cpu_temp=$(<"$CPU_TEMP")
+    [[ -z "$cpu_temp" ]] && continue
+
+    temp=$cpu_temp
+    if [[ -n "$GPU_TEMP" && -f "$GPU_TEMP" ]]; then
+        gpu_temp=$(<"$GPU_TEMP")
+        (( gpu_temp > temp )) && temp=$gpu_temp
+    fi
 
     target=$(pwm_for_temp "$temp")
 
@@ -85,5 +150,18 @@ while true; do
         cur_pwm=$target; last_up_temp=$temp
     fi
 
-    apply "$cur_pwm"
+    if apply "$cur_pwm" "$cpu_temp" "${gpu_temp:-0}"; then
+        if (( RPM_STALL_WARN && cur_pwm > 80 )); then
+            (( stall_cycles++ ))
+            if (( stall_cycles >= 5 )); then
+                fan1=$(cat "$HP_HWMON/fan1_input" 2>/dev/null)
+                if [[ -n "$fan1" ]] && (( fan1 < 200 )); then
+                    echo "warning: fan may be stalled — pwm=$cur_pwm but fan1=${fan1}rpm" >&2
+                fi
+                stall_cycles=0
+            fi
+        else
+            stall_cycles=0
+        fi
+    fi
 done
