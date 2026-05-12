@@ -8,6 +8,7 @@ PREFIX="${PREFIX:-/usr/local}"
 
 install -Dm755 "$SCRIPT_DIR/hp-fan-control" "$PREFIX/bin/hp-fan-control"
 install -Dm755 "$SCRIPT_DIR/hp-fan-curve"   "$PREFIX/bin/hp-fan-curve"
+ln -sf hp-fan-curve "$PREFIX/bin/hpf"
 
 systemctl restart hp-fan-control
 echo "updated to $(git -C "$SCRIPT_DIR" describe --tags 2>/dev/null || git -C "$SCRIPT_DIR" rev-parse --short HEAD)"

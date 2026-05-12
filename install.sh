@@ -17,6 +17,7 @@ HP_HWMON=$(grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs
 
 install -Dm755 "$SCRIPT_DIR/hp-fan-control"  "$PREFIX/bin/hp-fan-control"
 install -Dm755 "$SCRIPT_DIR/hp-fan-curve"   "$PREFIX/bin/hp-fan-curve"
+ln -sf hp-fan-curve "$PREFIX/bin/hpf"
 
 install -d -m 0777 /var/lib/hp-fan-control
 
