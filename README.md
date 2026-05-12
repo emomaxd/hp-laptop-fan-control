@@ -59,6 +59,20 @@ sudo hpf pwm 120          # lock fans at fixed pwm — stops daemon, no thermal 
 sudo hpf edit             # edit /etc/hp-fan-control.conf in $EDITOR
 ```
 
+Example output of `hpf status`:
+
+```
+preset:  auto (follow profile)
+mode:    manual (daemon active)
+profile: balanced
+---
+cpu:     61°C
+gpu:     43°C
+fan1:    2900 rpm
+fan2:    2900 rpm
+pwm:     110/255
+```
+
 ---
 
 ## Presets
@@ -179,6 +193,76 @@ Patches included in the fixes branch:
 - `platform/x86: hp-wmi: add locking for concurrent hwmon access`
 
 </details>
+
+---
+
+## AUR packages
+
+For Arch-based distros, AUR packages are available:
+
+| Package | Description |
+|---------|-------------|
+| [`hp-laptop-fan-control`](https://aur.archlinux.org/packages/hp-laptop-fan-control) | daemon + CLI |
+| [`hp-wmi-dkms`](https://aur.archlinux.org/packages/hp-wmi-dkms) | patched module, auto-rebuilt on kernel updates (pre-7.1 only) |
+
+```sh
+yay -S hp-laptop-fan-control          # Linux >= 7.1
+yay -S hp-laptop-fan-control hp-wmi-dkms  # older kernels
+```
+
+---
+
+## Troubleshooting
+
+**Daemon not starting — `hp-wmi hwmon not found`**
+
+The kernel module isn't loaded. Check:
+```sh
+lsmod | grep hp_wmi
+ls /sys/devices/platform/hp-wmi/hwmon/
+```
+If empty, see [Getting the module](#getting-the-module).
+
+---
+
+**Fan speed doesn't change**
+
+Check that the daemon is running in manual mode:
+```sh
+hpf status       # mode should say "manual (daemon active)"
+hpf log 20       # look for errors
+```
+If mode is `auto`, the daemon failed to set `pwm1_enable`. Check journal with `hpf log`.
+
+---
+
+**`build-module.sh` fails at `make`**
+
+Kernel headers are missing. Install them for your current kernel:
+```sh
+# Arch:
+pacman -S linux-headers
+
+# Ubuntu/Debian:
+apt install linux-headers-$(uname -r)
+```
+Then re-run `sudo ./build-module.sh`.
+
+---
+
+**Module loaded but fans still behave wrong after kernel update**
+
+The module only persists for the kernel version it was built for. After a kernel update, rebuild:
+```sh
+sudo ./build-module.sh
+```
+Or use `hp-wmi-dkms` (AUR) to handle this automatically.
+
+---
+
+**GPU temperature not shown in `hpf status`**
+
+Normal — the dGPU is off (D3cold). It will appear automatically once the GPU becomes active (e.g. when a game starts).
 
 ---
 
