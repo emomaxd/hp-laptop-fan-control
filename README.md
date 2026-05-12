@@ -206,8 +206,11 @@ For Arch-based distros, AUR packages are available:
 | [`hp-wmi-dkms`](https://aur.archlinux.org/packages/hp-wmi-dkms) | patched module, auto-rebuilt on kernel updates (pre-7.1 only) |
 
 ```sh
-yay -S hpfand          # Linux >= 7.1
-yay -S hpfand hp-wmi-dkms  # older kernels
+yay -S hpfand                  # Linux >= 7.1
+yay -S hpfand hp-wmi-dkms      # older kernels
+
+paru -S hpfand                 # Linux >= 7.1
+paru -S hpfand hp-wmi-dkms     # older kernels
 ```
 
 ---
