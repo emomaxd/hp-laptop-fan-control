@@ -25,4 +25,4 @@ Open a pull request against `master`.
 
 ## Kernel driver
 
-The underlying `hp_wmi` fixes are landing in **Linux 7.1**. Until then, use `build-module.sh` to build the patched module. Kernel-level issues belong in the [linux fork](https://github.com/emomaxd/linux/tree/hp-wmi-fixes), not here.
+The underlying `hp_wmi` fixes are landing in **Linux 7.1**. Until then, use `build-module.sh` to build the patched module. Kernel-level issues belong in the [linux fork](https://github.com/emomaxd/linux/tree/hp-wmi-victus-fan-v4), not here.

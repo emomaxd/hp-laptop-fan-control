@@ -169,7 +169,7 @@ This sparse-clones only the driver file from the patched branch, builds the modu
 <summary>Manual steps (if the script doesn't work)</summary>
 
 ```sh
-git clone https://github.com/emomaxd/linux -b hp-wmi-fixes --depth=1
+git clone https://github.com/emomaxd/linux -b hp-wmi-victus-fan-v4 --depth=1
 cd linux
 mkdir /tmp/hp-wmi-build
 cp drivers/platform/x86/hp/hp-wmi.c /tmp/hp-wmi-build/

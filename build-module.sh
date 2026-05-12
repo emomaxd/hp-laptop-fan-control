@@ -26,7 +26,7 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 
 echo "Fetching hp-wmi source (sparse clone, kernel source not downloaded)..."
 git clone --depth=1 --filter=blob:none --no-checkout \
-    https://github.com/emomaxd/linux -b hp-wmi-fixes \
+    https://github.com/emomaxd/linux -b hp-wmi-victus-fan-v4 \
     "$BUILD_DIR/linux" 2>&1 | grep -v "^$"
 cd "$BUILD_DIR/linux"
 git sparse-checkout init --cone
