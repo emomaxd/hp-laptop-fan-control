@@ -5,14 +5,13 @@ PREFIX="${PREFIX:-/usr/local}"
 
 [[ $EUID -eq 0 ]] || { echo "error: run as root"; exit 1; }
 
-systemctl disable --now hp-fan-control 2>/dev/null || true
-rm -f /etc/systemd/system/hp-fan-control.service
-rm -f "$PREFIX/bin/hp-fan-control"
-rm -f "$PREFIX/bin/hp-fan-curve"
+systemctl disable --now hpfand 2>/dev/null || true
+rm -f /etc/systemd/system/hpfand.service
+rm -f "$PREFIX/bin/hpfand"
 rm -f "$PREFIX/bin/hpf"
-if [[ -f /etc/hp-fan-control.conf ]]; then
-    echo "leaving /etc/hp-fan-control.conf in place — remove manually if not needed"
+if [[ -f /etc/hpfand.conf ]]; then
+    echo "leaving /etc/hpfand.conf in place — remove manually if not needed"
 fi
-rm -rf /var/lib/hp-fan-control
+rm -rf /var/lib/hpfand
 systemctl daemon-reload
 echo "uninstalled"

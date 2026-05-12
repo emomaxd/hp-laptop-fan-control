@@ -1,4 +1,4 @@
-# hp-laptop-fan-control
+# hpfand
 
 Fan curve daemon for HP Victus/Omen laptops on Linux. The firmware resets fan settings periodically and ramps aggressively. This daemon re-applies a configurable PWM curve every poll cycle to keep fans under control.
 
@@ -27,8 +27,8 @@ Supported boards (`cat /sys/class/dmi/id/board_name`):
 ## Install
 
 ```sh
-git clone https://github.com/emomaxd/hp-laptop-fan-control
-cd hp-laptop-fan-control
+git clone https://github.com/emomaxd/hpfand
+cd hpfand
 sudo ./install.sh
 ```
 
@@ -38,7 +38,7 @@ This installs the daemon as a systemd service and starts it immediately.
 
 ## Usage
 
-`hpf` is a short alias for `hp-fan-curve`, installed alongside it.
+`hpf` is the CLI companion to `hpfand`.
 
 ```sh
 hpf status              # cpu/gpu temp, fan rpm, pwm, active preset
@@ -56,7 +56,7 @@ sudo hpf set silent
 sudo hpf set performance
 sudo hpf follow           # auto-track system power profile
 sudo hpf pwm 120          # lock fans at fixed pwm — stops daemon, no thermal protection
-sudo hpf edit             # edit /etc/hp-fan-control.conf in $EDITOR
+sudo hpf edit             # edit /etc/hpfand.conf in $EDITOR
 ```
 
 Example output of `hpf status`:
@@ -105,7 +105,7 @@ Switch back to a fixed preset at any time with `sudo hpf set <preset>`.
 
 ## Custom curve
 
-`/etc/hp-fan-control.conf`:
+`/etc/hpfand.conf`:
 
 ```sh
 CT=(40 50 60 72 82)    # CPU temp thresholds in °C
@@ -129,7 +129,7 @@ If `inotify-tools` is installed, the conf reloads automatically on save — no r
 Test changes without writing to hardware:
 
 ```sh
-sudo hp-fan-control --dry-run
+sudo hpfand --dry-run
 ```
 
 ---
@@ -202,12 +202,12 @@ For Arch-based distros, AUR packages are available:
 
 | Package | Description |
 |---------|-------------|
-| [`hp-laptop-fan-control`](https://aur.archlinux.org/packages/hp-laptop-fan-control) | daemon + CLI |
+| [`hpfand`](https://aur.archlinux.org/packages/hpfand) | daemon + CLI |
 | [`hp-wmi-dkms`](https://aur.archlinux.org/packages/hp-wmi-dkms) | patched module, auto-rebuilt on kernel updates (pre-7.1 only) |
 
 ```sh
-yay -S hp-laptop-fan-control          # Linux >= 7.1
-yay -S hp-laptop-fan-control hp-wmi-dkms  # older kernels
+yay -S hpfand          # Linux >= 7.1
+yay -S hpfand hp-wmi-dkms  # older kernels
 ```
 
 ---

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-CONF=/etc/hp-fan-control.conf
-SILENT_FLAG=/var/lib/hp-fan-control/silent
+CONF=/etc/hpfand.conf
+SILENT_FLAG=/var/lib/hpfand/silent
 
 usage() {
     cat <<EOF
-usage: hp-fan-curve <command>
+usage: hpf <command>
 
 commands:
   status [-w [N]]     live cpu/gpu temp, fan rpm, pwm, active preset
@@ -100,7 +100,7 @@ cmd_status() {
 cmd_set() {
     need_root
     local name=$1
-    [[ -z "$name" ]] && { echo "usage: hp-fan-curve set <preset>"; echo "run 'hp-fan-curve presets' to list options"; exit 1; }
+    [[ -z "$name" ]] && { echo "usage: hpf set <preset>"; echo "run 'hpf presets' to list options"; exit 1; }
     local ct cp hyst poll
 
     case "$name" in
@@ -112,7 +112,7 @@ cmd_set() {
             ct="35 45 58 68 78"; cp="30 80 140 210 255"; hyst=4; poll=1 ;;
         *)
             echo "unknown preset: $name"
-            echo "run 'hp-fan-curve presets' to list options"
+            echo "run 'hpf presets' to list options"
             exit 1 ;;
     esac
 
@@ -124,7 +124,7 @@ HYST=$hyst
 POLL_SEC=$poll
 FOLLOW_PLATFORM_PROFILE=0
 EOF
-    systemctl restart hp-fan-control 2>/dev/null \
+    systemctl restart hpfand 2>/dev/null \
         && echo "applied: $name" \
         || echo "applied: $name (restart daemon manually)"
 }
@@ -139,7 +139,7 @@ cmd_follow() {
 # preset: auto
 FOLLOW_PLATFORM_PROFILE=1
 EOF
-    systemctl restart hp-fan-control 2>/dev/null \
+    systemctl restart hpfand 2>/dev/null \
         && echo "follow: tracking platform profile ($(</sys/firmware/acpi/platform_profile))" \
         || echo "follow: enabled (restart daemon manually)"
 }
@@ -156,14 +156,14 @@ cmd_toggle() {
 
 cmd_log() {
     local lines=${1:-50}
-    journalctl -u hp-fan-control -n "$lines" --no-pager -o short
+    journalctl -u hpfand -n "$lines" --no-pager -o short
 }
 
 cmd_edit() {
     need_root
     [[ ! -f "$CONF" ]] && cmd_set balanced >/dev/null
     ${EDITOR:-nano} "$CONF"
-    systemctl restart hp-fan-control || echo "warning: failed to restart daemon — do it manually"
+    systemctl restart hpfand || echo "warning: failed to restart daemon — do it manually"
 }
 
 cmd_presets() {
@@ -177,18 +177,18 @@ EOF
 cmd_pwm() {
     need_root
     local val=$1
-    [[ -z "$val" ]] && { echo "usage: hp-fan-curve pwm <0-255>"; exit 1; }
+    [[ -z "$val" ]] && { echo "usage: hpf pwm <0-255>"; exit 1; }
     [[ "$val" =~ ^[0-9]+$ ]] && (( val <= 255 )) || { echo "error: value must be 0-255"; exit 1; }
 
     local HP_HWMON
     HP_HWMON=$(find_hwmon)
     [[ -d "$HP_HWMON" ]] || { echo "error: hp hwmon not found"; exit 1; }
 
-    systemctl stop hp-fan-control 2>/dev/null
+    systemctl stop hpfand 2>/dev/null
     echo 1      > "$HP_HWMON/pwm1_enable"
     echo "$val" > "$HP_HWMON/pwm1"
     echo "pwm locked: $val/255 (daemon stopped)"
-    echo "warning: no thermal protection — run 'hp-fan-curve set <preset>' to restore"
+    echo "warning: no thermal protection — run 'hpf set <preset>' to restore"
 }
 
 case "$1" in

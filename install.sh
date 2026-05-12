@@ -15,17 +15,16 @@ HP_HWMON=$(grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs
     exit 1
 }
 
-install -Dm755 "$SCRIPT_DIR/hp-fan-control"  "$PREFIX/bin/hp-fan-control"
-install -Dm755 "$SCRIPT_DIR/hp-fan-curve"   "$PREFIX/bin/hp-fan-curve"
-ln -sf hp-fan-curve "$PREFIX/bin/hpf"
+install -Dm755 "$SCRIPT_DIR/hpfand" "$PREFIX/bin/hpfand"
+install -Dm755 "$SCRIPT_DIR/hpf"   "$PREFIX/bin/hpf"
 
-install -d -m 0777 /var/lib/hp-fan-control
+install -d -m 0777 /var/lib/hpfand
 
-sed "s|HP_FAN_CONTROL_BIN|$PREFIX/bin/hp-fan-control|" \
-    "$SCRIPT_DIR/hp-fan-control.service" \
-    > /etc/systemd/system/hp-fan-control.service
-chmod 644 /etc/systemd/system/hp-fan-control.service
+sed "s|HPFAND_BIN|$PREFIX/bin/hpfand|" \
+    "$SCRIPT_DIR/hpfand.service" \
+    > /etc/systemd/system/hpfand.service
+chmod 644 /etc/systemd/system/hpfand.service
 
 systemctl daemon-reload
-systemctl enable --now hp-fan-control
-systemctl status hp-fan-control --no-pager || true
+systemctl enable --now hpfand
+systemctl status hpfand --no-pager || true

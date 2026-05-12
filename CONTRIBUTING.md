@@ -10,7 +10,7 @@ cat /sys/class/dmi/id/board_name
 cat /sys/class/dmi/id/product_name
 ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1 2>/dev/null || echo "hwmon not found"
 hpf status
-journalctl -u hp-fan-control -n 30 --no-pager
+journalctl -u hpfand -n 30 --no-pager
 ```
 
 For hardware compatibility reports (new board, fan behaves wrong), the board name and a description of the symptom is enough.
@@ -19,7 +19,7 @@ For hardware compatibility reports (new board, fan behaves wrong), the board nam
 
 - Keep changes minimal — match the style of the surrounding code.
 - One logical change per commit.
-- Test with `sudo hp-fan-control --dry-run` before submitting.
+- Test with `sudo hpfand --dry-run` before submitting.
 
 Open a pull request against `master`.
 

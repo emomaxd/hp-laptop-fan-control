@@ -1,7 +1,7 @@
 #!/bin/bash
 
-CONF=/etc/hp-fan-control.conf
-SILENT_FLAG=/var/lib/hp-fan-control/silent
+CONF=/etc/hpfand.conf
+SILENT_FLAG=/var/lib/hpfand/silent
 DRY_RUN=0
 MAINPID=$$
 INOTIFY_PID=

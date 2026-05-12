@@ -1,16 +1,16 @@
 [Unit]
-Description=HP Victus fan control
+Description=hpfand — HP Victus/Omen fan curve daemon
 After=systemd-modules-load.service
 
 [Service]
 Type=simple
-ExecStart=HP_FAN_CONTROL_BIN
+ExecStart=HPFAND_BIN
 Restart=always
 RestartSec=3
 TimeoutStopSec=5
 StandardOutput=journal
 StandardError=journal
-StateDirectory=hp-fan-control
+StateDirectory=hpfand
 StateDirectoryMode=0777
 
 [Install]

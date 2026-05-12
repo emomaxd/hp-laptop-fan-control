@@ -3,7 +3,7 @@
 ## [1.3.0] - 2026-05-12
 
 ### Added
-- `hpf` shorthand — symlinked to `hp-fan-curve` on install (`hpf status`, `hpf toggle`, etc.)
+- `hpf` CLI — replaces `hp-fan-curve`; `hpfand` replaces `hp-fan-control` daemon binary
 - `build-module.sh` — one-command module builder for pre-7.1 kernels; sparse-clones only the driver file
 - `CONTRIBUTING.md`
 
@@ -17,12 +17,12 @@
 
 ### Added
 - Separate GPU fan curve — `GPU_CT`/`GPU_CP` config vars for an independent GPU curve; daemon uses `max(cpu_pwm, gpu_pwm)` each cycle; defaults to CPU curve if unset
-- inotify conf reload — changes to `/etc/hp-fan-control.conf` apply instantly without daemon restart (requires `inotify-tools`; graceful fallback without it)
-- `hp-fan-curve log [N]` — show last N journal entries (default 50)
+- inotify conf reload — changes to `/etc/hpfand.conf` apply instantly without daemon restart (requires `inotify-tools`; graceful fallback without it)
+- `hpf log [N]` — show last N journal entries (default 50)
 - Earlier service startup — `After=systemd-modules-load.service`
 
 ### Fixed
-- Silent mode now persists across reboots — flag moved from `/tmp` to `/var/lib/hp-fan-control/silent`
+- Silent mode now persists across reboots — flag moved from `/tmp` to `/var/lib/hpfand/silent`
 - Cold start fix — correct PWM applied immediately on startup, no more one-cycle blast at full speed
 
 ---
@@ -33,17 +33,17 @@
 - `update.sh` — in-place script update without full reinstall
 - GPU temperature tracking — fan curve driven by `max(cpu_temp, gpu_temp)`
 - `--dry-run` mode — prints calculated PWM values without writing to hardware
-- `hp-fan-curve follow` — auto-track system power profile (`low-power` → silent, `balanced` → balanced, `performance` → performance)
+- `hpf follow` — auto-track system power profile (`low-power` → silent, `balanced` → balanced, `performance` → performance)
 - RPM stall warning — logs to journal if fan RPM stays below 200 while PWM is high
-- Watch mode — `hp-fan-curve status -w [N]`
+- Watch mode — `hpf status -w [N]`
 - Per-preset poll interval (silent: 4s, balanced: 2s, performance: 1s)
 
 ---
 
 ## [1.0.0] - 2025-02-15
 
-- Initial release: daemon, `hp-fan-curve` CLI, systemd service, install/uninstall scripts
-- Config file support (`/etc/hp-fan-control.conf`)
-- `hp-fan-curve` commands: `status`, `set`, `pwm`, `presets`
+- Initial release: daemon, `hpf` CLI, systemd service, install/uninstall scripts
+- Config file support (`/etc/hpfand.conf`)
+- `hpf` commands: `status`, `set`, `pwm`, `presets`
 - Three presets: silent, balanced, performance
 - Linear PWM interpolation with configurable hysteresis
