@@ -134,7 +134,7 @@ sudo hpfand --dry-run
 
 ---
 
-<details>
+<details open>
 <summary><h2>Getting the module</h2></summary>
 
 The `pwm1` hwmon interface is in the in-tree `hp_wmi` driver. The required fixes landed in **Linux 7.1** ([Phoronix](https://www.phoronix.com/news/Linux-7.1-x86-Platform-Drivers), [kernel.org](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=da6b5aae84beb0917ecb0c9fbc71169d145397ff)).
@@ -184,13 +184,7 @@ sudo depmod -a
 
 </details>
 
-Patches included in the fixes branch:
-
-- `platform/x86: hp-wmi: fix ignored return values in fan settings`
-- `platform/x86: hp-wmi: avoid cancel_delayed_work_sync from work handler`
-- `platform/x86: hp-wmi: use mod_delayed_work to reset keep-alive timer`
-- `platform/x86: hp-wmi: fix u8 underflow in gpu_delta calculation`
-- `platform/x86: hp-wmi: add locking for concurrent hwmon access`
+Patches in [`hp-wmi-victus-fan-v4`](https://github.com/emomaxd/linux/commits/hp-wmi-victus-fan-v4): return value fixes, keep-alive timer, gpu_delta underflow, concurrent access locking.
 
 </details>
 
@@ -215,59 +209,20 @@ paru -S hpfand hp-wmi-dkms     # older kernels
 
 ---
 
-## Troubleshooting
+<details>
+<summary><h2>Troubleshooting</h2></summary>
 
-**Daemon not starting — `hp-wmi hwmon not found`**
+**Daemon not starting — `hp-wmi hwmon not found`** — module not loaded. See [Getting the module](#getting-the-module).
 
-The kernel module isn't loaded. Check:
-```sh
-lsmod | grep hp_wmi
-ls /sys/devices/platform/hp-wmi/hwmon/
-```
-If empty, see [Getting the module](#getting-the-module).
+**Fan speed doesn't change** — run `hpf status` (mode should be `manual (daemon active)`) and `hpf log 20` for errors.
 
----
+**`build-module.sh` fails at `make`** — kernel headers missing. Install for your kernel (`pacman -S linux-headers` / `apt install linux-headers-$(uname -r)`) then retry.
 
-**Fan speed doesn't change**
+**Fans wrong after kernel update** — module is version-specific. Run `sudo ./build-module.sh` again, or use `hp-wmi-dkms` (AUR).
 
-Check that the daemon is running in manual mode:
-```sh
-hpf status       # mode should say "manual (daemon active)"
-hpf log 20       # look for errors
-```
-If mode is `auto`, the daemon failed to set `pwm1_enable`. Check journal with `hpf log`.
+**GPU temp not shown** — dGPU is in D3cold (off). Appears automatically when GPU becomes active.
 
----
-
-**`build-module.sh` fails at `make`**
-
-Kernel headers are missing. Install them for your current kernel:
-```sh
-# Arch:
-pacman -S linux-headers
-
-# Ubuntu/Debian:
-apt install linux-headers-$(uname -r)
-```
-Then re-run `sudo ./build-module.sh`.
-
----
-
-**Module loaded but fans still behave wrong after kernel update**
-
-The module only persists for the kernel version it was built for. After a kernel update, rebuild:
-```sh
-sudo ./build-module.sh
-```
-Or use `hp-wmi-dkms` (AUR) to handle this automatically.
-
----
-
-**GPU temperature not shown in `hpf status`**
-
-Normal — the dGPU is off (D3cold). It will appear automatically once the GPU becomes active (e.g. when a game starts).
-
----
+</details>
 
 ## Uninstall
 
