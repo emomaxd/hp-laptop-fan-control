@@ -22,7 +22,7 @@ Project renamed from `hp-laptop-fan-control` to `hpfand`. Breaking change for ex
 
 ---
 
-## [1.2.0] - 2025-04-21
+## [1.2.0] - 2026-04-17
 
 ### Added
 - Separate GPU fan curve — `GPU_CT`/`GPU_CP` config vars for an independent GPU curve; daemon uses `max(cpu_pwm, gpu_pwm)` each cycle; defaults to CPU curve if unset
@@ -36,7 +36,7 @@ Project renamed from `hp-laptop-fan-control` to `hpfand`. Breaking change for ex
 
 ---
 
-## [1.1.0] - 2025-03-10
+## [1.1.0] - 2026-04-17
 
 ### Added
 - `update.sh` — in-place script update without full reinstall
@@ -49,7 +49,7 @@ Project renamed from `hp-laptop-fan-control` to `hpfand`. Breaking change for ex
 
 ---
 
-## [1.0.0] - 2025-02-15
+## [1.0.0] - 2026-04-12
 
 - Initial release: daemon, `hpf` CLI, systemd service, install/uninstall scripts
 - Config file support (`/etc/hpfand.conf`)
