@@ -13,25 +13,12 @@ Project renamed from `hp-laptop-fan-control` to `hpfand`. Breaking change for ex
 
 ### Added
 - AUR packages: `hpfand` and `hp-wmi-dkms` (DKMS, auto-rebuilds on kernel update)
-- Troubleshooting section in README
-- `hpf status` example output in README
+- `build-module.sh` — one-command module builder for pre-7.1 kernels; sparse-clones only the driver file
+- `CONTRIBUTING.md`, troubleshooting section, `hpf status` example in README
 
 ### Fixed
 - GPU hwmon re-detected each poll cycle — dGPU powered on after daemon start (Optimus/PRIME) now tracked correctly
 - Signal traps (USR1/SIGTERM) fire immediately — sleep is now interruptible
-
----
-
-## [1.3.0] - 2026-05-12
-
-### Added
-- `hpf` CLI — replaces `hp-fan-curve`; `hpfand` replaces `hp-fan-control` daemon binary
-- `build-module.sh` — one-command module builder for pre-7.1 kernels; sparse-clones only the driver file
-- `CONTRIBUTING.md`
-
-### Fixed
-- GPU hwmon re-detected each poll cycle — dGPU powered on after daemon start (Optimus/PRIME) now tracked correctly
-- Signal traps (USR1/SIGTERM) fire immediately — sleep is now interruptible, no longer waits up to POLL_SEC before responding
 
 ---
 
