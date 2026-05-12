@@ -2,25 +2,16 @@
 
 Fan curve daemon for HP Victus/Omen laptops on Linux. The firmware resets fan settings periodically and ramps aggressively. This daemon re-applies a configurable PWM curve every poll cycle to keep fans under control.
 
-## Does it work on my machine?
+## Compatibility
 
 ```sh
 ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1 2>/dev/null \
   && echo "supported" || echo "pwm1 not found — see Getting the module"
 ```
 
-Supported boards (`cat /sys/class/dmi/id/board_name`):
+Supported boards (`cat /sys/class/dmi/id/board_name`): `8BBE 8BD4 8BD5 8C99 8C9C 8D41` (Victus), `8BAB 8BCA 8BCD 8C76 8C78 8A4D` (Omen).
 
-| Board | Series |
-|-------|--------|
-| 8BBE, 8BD4, 8BD5, 8C99, 8C9C, 8D41 | HP Victus |
-| 8BAB, 8BCA, 8BCD, 8C76, 8C78, 8A4D | HP Omen |
-
-**Linux ≥ 7.1:** fully supported, skip to [Install](#install).
-
-**Older kernels, `pwm1` found:** the daemon works, but the stock driver has known bugs (dropped fan writes, keep-alive races, wrong GPU delta). Building the patched module is recommended for reliable operation — see [Getting the module](#getting-the-module).
-
-**Older kernels, `pwm1` not found:** the patched module must be loaded first or `install.sh` will fail — see [Getting the module](#getting-the-module).
+**Linux ≥ 7.1:** skip to [Install](#install). **Older kernels:** see [Getting the module](#getting-the-module).
 
 ---
 
@@ -32,28 +23,27 @@ cd hpfand
 sudo ./install.sh
 ```
 
-This installs the daemon as a systemd service and starts it immediately.
+Or via AUR (Arch-based):
+
+```sh
+paru -S hpfand                  # Linux >= 7.1
+paru -S hpfand hp-wmi-dkms      # older kernels
+```
 
 ---
 
 ## Usage
 
-`hpf` is the CLI companion to `hpfand`.
-
 ```sh
 hpf status              # cpu/gpu temp, fan rpm, pwm, active preset
 hpf status -w           # watch mode — refresh every 2s
-hpf status -w 1         # watch mode — refresh every 1s
 hpf presets             # list available presets
 hpf toggle              # toggle silent mode on/off — no root needed, persists across reboots
 hpf log                 # show last 50 journal entries
-hpf log 100
 ```
 
 ```sh
-sudo hpf set balanced     # apply a preset
-sudo hpf set silent
-sudo hpf set performance
+sudo hpf set balanced     # apply a preset (silent / balanced / performance)
 sudo hpf follow           # auto-track system power profile
 sudo hpf pwm 120          # lock fans at fixed pwm — stops daemon, no thermal protection
 sudo hpf edit             # edit /etc/hpfand.conf in $EDITOR
@@ -83,23 +73,7 @@ pwm:     110/255
 | balanced | 40°C | 82°C | 6°C | 2s |
 | performance | 35°C | 78°C | 4°C | 1s |
 
----
-
-## Power profile tracking
-
-```sh
-sudo hpf follow
-```
-
-Automatically maps the active system power profile to the matching preset. Works with `power-profiles-daemon`, `TLP`, `auto-cpufreq`, or anything that writes `/sys/firmware/acpi/platform_profile`:
-
-| platform profile | preset |
-|------------------|--------|
-| `low-power` | silent |
-| `balanced` | balanced |
-| `performance` | performance |
-
-Switch back to a fixed preset at any time with `sudo hpf set <preset>`.
+`sudo hpf follow` maps `low-power`→silent, `balanced`→balanced, `performance`→performance automatically.
 
 ---
 
@@ -122,11 +96,9 @@ FOLLOW_PLATFORM_PROFILE=0  # set to 1 to auto-track power profile
 RPM_STALL_WARN=1           # warn in journal if fan stalls at high PWM
 ```
 
-The daemon uses `max(cpu_pwm, gpu_pwm)` each cycle — whichever sensor is hotter drives the fans. Points are linearly interpolated. Ramp-up is immediate; ramp-down waits until temp drops `HYST` degrees below the last ramp-up point.
+The daemon uses `max(cpu_pwm, gpu_pwm)` each cycle. Points are linearly interpolated. Ramp-up is immediate; ramp-down waits until temp drops `HYST` degrees below the last ramp-up point.
 
-If `inotify-tools` is installed, the conf reloads automatically on save — no restart needed.
-
-Test changes without writing to hardware:
+If `inotify-tools` is installed, the conf reloads automatically on save. Test without writing to hardware:
 
 ```sh
 sudo hpfand --dry-run
@@ -139,13 +111,9 @@ sudo hpfand --dry-run
 
 The `pwm1` hwmon interface is in the in-tree `hp_wmi` driver. The required fixes landed in **Linux 7.1** ([Phoronix](https://www.phoronix.com/news/Linux-7.1-x86-Platform-Drivers), [kernel.org](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=da6b5aae84beb0917ecb0c9fbc71169d145397ff)).
 
-**Linux ≥ 7.1:** already supported — run the check at the top to confirm.
-
 **Older kernels:** use `build-module.sh` to build and load the patched driver automatically.
 
 ### Requirements
-
-Before running the script, install kernel headers for your running kernel:
 
 | Distro | Command |
 |--------|---------|
@@ -163,7 +131,7 @@ sudo ./build-module.sh
 
 This sparse-clones only the driver file from the patched branch, builds the module, loads it, and installs it so it survives reboots (until the next kernel update). Then run `sudo ./install.sh` as usual.
 
-> The module only persists for the current kernel version. After a kernel update, run `build-module.sh` again — or upgrade to Linux 7.1.
+> The module only persists for the current kernel version. After a kernel update, run `build-module.sh` again — or use `hp-wmi-dkms` (AUR) to handle this automatically.
 
 <details>
 <summary>Manual steps (if the script doesn't work)</summary>
@@ -190,25 +158,6 @@ Patches in [`hp-wmi-victus-fan-v4`](https://github.com/emomaxd/linux/commits/hp-
 
 ---
 
-## AUR packages
-
-For Arch-based distros, AUR packages are available:
-
-| Package | Description |
-|---------|-------------|
-| [`hpfand`](https://aur.archlinux.org/packages/hpfand) | daemon + CLI |
-| [`hp-wmi-dkms`](https://aur.archlinux.org/packages/hp-wmi-dkms) | patched module, auto-rebuilt on kernel updates (pre-7.1 only) |
-
-```sh
-yay -S hpfand                  # Linux >= 7.1
-yay -S hpfand hp-wmi-dkms      # older kernels
-
-paru -S hpfand                 # Linux >= 7.1
-paru -S hpfand hp-wmi-dkms     # older kernels
-```
-
----
-
 <details>
 <summary><h2>Troubleshooting</h2></summary>
 
@@ -223,6 +172,8 @@ paru -S hpfand hp-wmi-dkms     # older kernels
 **GPU temp not shown** — dGPU is in D3cold (off). Appears automatically when GPU becomes active.
 
 </details>
+
+---
 
 ## Uninstall
 
