@@ -120,7 +120,8 @@ sudo hp-fan-control --dry-run
 
 ---
 
-## Getting the module
+<details>
+<summary><h2>Getting the module</h2></summary>
 
 The `pwm1` hwmon interface is in the in-tree `hp_wmi` driver. The required fixes landed in **Linux 7.1** ([Phoronix](https://www.phoronix.com/news/Linux-7.1-x86-Platform-Drivers), [kernel.org](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=da6b5aae84beb0917ecb0c9fbc71169d145397ff)).
 
@@ -176,6 +177,8 @@ Patches included in the fixes branch:
 - `platform/x86: hp-wmi: use mod_delayed_work to reset keep-alive timer`
 - `platform/x86: hp-wmi: fix u8 underflow in gpu_delta calculation`
 - `platform/x86: hp-wmi: add locking for concurrent hwmon access`
+
+</details>
 
 ---
 
