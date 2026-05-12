@@ -5,7 +5,6 @@ pkgdesc="Fan curve daemon for HP Victus/Omen laptops"
 arch=('any')
 url="https://github.com/emomaxd/hpfand"
 license=('GPL-2.0-only')
-keywords=('fan' 'hp' 'victus' 'omen' 'hwmon' 'thermal' 'daemon')
 depends=('bash' 'systemd')
 optdepends=(
     'inotify-tools: automatic config reload on save'
