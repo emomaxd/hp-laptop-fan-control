@@ -6,7 +6,7 @@ Fan curve daemon for HP Victus/Omen laptops on Linux. The firmware resets fan se
 
 ```sh
 ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1 2>/dev/null \
-  && echo "supported" || echo "need patched module — see below"
+  && echo "supported" || echo "pwm1 not found — see Getting the module"
 ```
 
 Supported boards (`cat /sys/class/dmi/id/board_name`):
@@ -16,9 +16,11 @@ Supported boards (`cat /sys/class/dmi/id/board_name`):
 | 8BBE, 8BD4, 8BD5, 8C99, 8C9C, 8D41 | HP Victus |
 | 8BAB, 8BCA, 8BCD, 8C76, 8C78, 8A4D | HP Omen |
 
-**Linux ≥ 7.1:** supported out of the box — skip to [Install](#install).
+**Linux ≥ 7.1:** fully supported, skip to [Install](#install).
 
-**Older kernels:** the module must be built and loaded first or `install.sh` will fail. See [Getting the module](#getting-the-module), then come back here.
+**Older kernels, `pwm1` found:** the daemon works, but the stock driver has known bugs (dropped fan writes, keep-alive races, wrong GPU delta). Building the patched module is recommended for reliable operation — see [Getting the module](#getting-the-module).
+
+**Older kernels, `pwm1` not found:** the patched module must be loaded first or `install.sh` will fail — see [Getting the module](#getting-the-module).
 
 ---
 
