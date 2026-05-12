@@ -16,7 +16,9 @@ Supported boards (`cat /sys/class/dmi/id/board_name`):
 | 8BBE, 8BD4, 8BD5, 8C99, 8C9C, 8D41 | HP Victus |
 | 8BAB, 8BCA, 8BCD, 8C76, 8C78, 8A4D | HP Omen |
 
-If the check says **"need patched module"**, see [Getting the module](#getting-the-module) before installing.
+**Linux ≥ 7.1:** supported out of the box — skip to [Install](#install).
+
+**Older kernels:** the module must be built and loaded first or `install.sh` will fail. See [Getting the module](#getting-the-module), then come back here.
 
 ---
 
