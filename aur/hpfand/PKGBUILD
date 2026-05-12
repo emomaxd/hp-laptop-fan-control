@@ -1,5 +1,5 @@
 pkgname=hpfand
-pkgver=1.4.0
+pkgver=2.0.0
 pkgrel=1
 pkgdesc="Fan curve daemon for HP Victus/Omen laptops"
 arch=('any')

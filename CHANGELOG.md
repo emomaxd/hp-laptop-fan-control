@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.0] - 2026-05-12
+
+Project renamed from `hp-laptop-fan-control` to `hpfand`. Breaking change for existing installs — run `sudo ./uninstall.sh` then `sudo ./install.sh`.
+
+### Breaking changes
+- Daemon binary: `hp-fan-control` → `hpfand`
+- CLI: `hp-fan-curve` → `hpf`
+- Config: `/etc/hp-fan-control.conf` → `/etc/hpfand.conf`
+- State dir: `/var/lib/hp-fan-control/` → `/var/lib/hpfand/`
+- Service: `hp-fan-control.service` → `hpfand.service`
+
+### Added
+- AUR packages: `hpfand` and `hp-wmi-dkms` (DKMS, auto-rebuilds on kernel update)
+- Troubleshooting section in README
+- `hpf status` example output in README
+
+### Fixed
+- GPU hwmon re-detected each poll cycle — dGPU powered on after daemon start (Optimus/PRIME) now tracked correctly
+- Signal traps (USR1/SIGTERM) fire immediately — sleep is now interruptible
+
+---
+
 ## [1.3.0] - 2026-05-12
 
 ### Added
