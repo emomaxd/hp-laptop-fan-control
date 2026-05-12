@@ -162,7 +162,7 @@ last_profile=""
 stall_cycles=0
 
 while true; do
-    sleep $POLL_SEC
+    sleep "$POLL_SEC" & wait $!
 
     if (( FOLLOW_PLATFORM_PROFILE )) && [[ -f /sys/firmware/acpi/platform_profile ]]; then
         prof=$(<"/sys/firmware/acpi/platform_profile")
@@ -177,8 +177,9 @@ while true; do
     cpu_temp=$(<"$CPU_TEMP")
     [[ -z "$cpu_temp" ]] && continue
 
+    [[ -z "$GPU_TEMP" || ! -f "$GPU_TEMP" ]] && GPU_TEMP=$(find_gpu_temp)
     gpu_temp=0
-    [[ -n "$GPU_TEMP" && -f "$GPU_TEMP" ]] && gpu_temp=$(<"$GPU_TEMP")
+    [[ -n "$GPU_TEMP" ]] && gpu_temp=$(<"$GPU_TEMP")
 
     cpu_target=$(pwm_for_temp CT CP "$cpu_temp")
     gpu_target=0
