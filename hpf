@@ -39,10 +39,34 @@ find_gpu_temp() {
     done
 }
 
+find_cpu_temp() {
+    local dir f lf
+    for dir in /sys/devices/platform/coretemp.*/hwmon/hwmon*; do
+        [[ -d "$dir" ]] || continue
+        for lf in "$dir"/temp*_label; do
+            [[ -f "$lf" ]] || continue
+            [[ "$(<"$lf")" == "Package id 0" ]] && echo "${lf/_label/_input}" && return
+        done
+        [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return
+    done
+    local name
+    for f in /sys/class/hwmon/*/name; do
+        [[ -f "$f" ]] || continue
+        name=$(<"$f")
+        [[ "$name" == "k10temp" || "$name" == "zenpower" ]] || continue
+        dir=$(dirname "$f")
+        for lf in "$dir"/temp*_label; do
+            [[ -f "$lf" ]] || continue
+            [[ "$(<"$lf")" == "Tdie" ]] && echo "${lf/_label/_input}" && return
+        done
+        [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return
+    done
+}
+
 print_status() {
     local HP_HWMON CPU_TEMP GPU_TEMP_PATH
     HP_HWMON=$(find_hwmon)
-    CPU_TEMP=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
+    CPU_TEMP=$(find_cpu_temp)
     GPU_TEMP_PATH=$(find_gpu_temp)
 
     local preset="custom"

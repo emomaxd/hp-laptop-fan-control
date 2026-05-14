@@ -12,6 +12,13 @@ CT=() CP=() GPU_CT=() GPU_CP=()
 HYST=6; POLL_SEC=2; HYST_MC=6000
 FOLLOW_PLATFORM_PROFILE=0; RPM_STALL_WARN=1
 
+conf_safe() {
+    local owner mode
+    read -r owner mode < <(stat -c '%U %a' "$CONF" 2>/dev/null) || return 1
+    [[ "$owner" == "root" ]] || { echo "warning: $CONF not owned by root — skipping" >&2; return 1; }
+    (( (8#$mode & 8#022) == 0 )) || { echo "warning: $CONF is group/world-writable — skipping" >&2; return 1; }
+}
+
 load_conf() {
     CT=(40 50 60 72 82)
     CP=(0  30 80 170 240)
@@ -23,7 +30,15 @@ load_conf() {
     RPM_STALL_WARN=1
 
     if [[ -f "$CONF" ]]; then
-        source "$CONF" || echo "warning: failed to source $CONF, using defaults" >&2
+        if conf_safe; then
+            source "$CONF" || echo "warning: failed to source $CONF, using defaults" >&2
+        fi
+    fi
+
+    if (( ${#CT[@]} < 2 || ${#CP[@]} != ${#CT[@]} )); then
+        echo "warning: CT/CP array mismatch in $CONF, using defaults" >&2
+        CT=(40 50 60 72 82)
+        CP=(0  30 80 170 240)
     fi
 
     for i in "${!CT[@]}"; do CT[$i]=$(( CT[i] * 1000 )); done
@@ -34,7 +49,13 @@ load_conf() {
         GPU_CT=("${CT[@]}")
         GPU_CP=("${CP[@]}")
     else
-        for i in "${!GPU_CT[@]}"; do GPU_CT[$i]=$(( GPU_CT[i] * 1000 )); done
+        if (( ${#GPU_CP[@]} != ${#GPU_CT[@]} )); then
+            echo "warning: GPU_CT/GPU_CP array mismatch in $CONF, ignoring GPU overrides" >&2
+            GPU_CT=("${CT[@]}")
+            GPU_CP=("${CP[@]}")
+        else
+            for i in "${!GPU_CT[@]}"; do GPU_CT[$i]=$(( GPU_CT[i] * 1000 )); done
+        fi
     fi
 }
 
@@ -55,12 +76,38 @@ find_gpu_temp() {
     done
 }
 
+find_cpu_temp() {
+    local dir f lf
+    # Intel coretemp: prefer "Package id 0" label over temp1 which may be a single core
+    for dir in /sys/devices/platform/coretemp.*/hwmon/hwmon*; do
+        [[ -d "$dir" ]] || continue
+        for lf in "$dir"/temp*_label; do
+            [[ -f "$lf" ]] || continue
+            [[ "$(<"$lf")" == "Package id 0" ]] && echo "${lf/_label/_input}" && return
+        done
+        [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return
+    done
+    # AMD k10temp / zenpower: prefer Tdie (no offset) over Tctl which has +10°C on some Zen
+    local name
+    for f in /sys/class/hwmon/*/name; do
+        [[ -f "$f" ]] || continue
+        name=$(<"$f")
+        [[ "$name" == "k10temp" || "$name" == "zenpower" ]] || continue
+        dir=$(dirname "$f")
+        for lf in "$dir"/temp*_label; do
+            [[ -f "$lf" ]] || continue
+            [[ "$(<"$lf")" == "Tdie" ]] && echo "${lf/_label/_input}" && return
+        done
+        [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return
+    done
+}
+
 HP_HWMON=$(find_hwmon)
-CPU_TEMP=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
+CPU_TEMP=$(find_cpu_temp)
 GPU_TEMP=$(find_gpu_temp)
 
 [[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
-[[ -f "$CPU_TEMP" ]] || { echo "coretemp not found"     >&2; exit 1; }
+[[ -f "$CPU_TEMP" ]] || { echo "cpu temp sensor not found (tried coretemp, k10temp, zenpower)" >&2; exit 1; }
 
 load_conf
 
@@ -108,13 +155,11 @@ apply() {
     fi
     local i
     for ((i=0; i<5; i++)); do
-        echo 1 > "$HP_HWMON/pwm1_enable" 2>/dev/null
-        if [[ "$(<"$HP_HWMON/pwm1_enable")" == "1" ]]; then
-            echo "$1" > "$HP_HWMON/pwm1"
-            return 0
-        fi
+        echo 1    > "$HP_HWMON/pwm1_enable" 2>/dev/null
+        echo "$1" > "$HP_HWMON/pwm1"         2>/dev/null
+        [[ "$(<"$HP_HWMON/pwm1_enable" 2>/dev/null)" == "1" ]] && return 0
     done
-    echo "warning: failed to set pwm1_enable after 5 attempts" >&2
+    echo "warning: failed to maintain pwm1_enable=1 after 5 attempts" >&2
     return 1
 }
 
