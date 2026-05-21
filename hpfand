@@ -11,6 +11,7 @@ INOTIFY_PID=
 CT=() CP=() GPU_CT=() GPU_CP=()
 HYST=6; POLL_SEC=2; HYST_MC=6000
 FOLLOW_PLATFORM_PROFILE=0; RPM_STALL_WARN=1
+SLEW_UP=100; SLEW_DOWN=20
 
 conf_safe() {
     local owner mode
@@ -40,6 +41,7 @@ load_conf() {
         CT=(40 50 60 72 82)
         CP=(0  30 80 170 240)
     fi
+    validate_curve CPU CT CP || { CT=(40 50 60 72 82); CP=(0 30 80 170 240); }
 
     for i in "${!CT[@]}"; do CT[$i]=$(( CT[i] * 1000 )); done
     HYST_MC=$(( HYST * 1000 ))
@@ -54,7 +56,12 @@ load_conf() {
             GPU_CT=("${CT[@]}")
             GPU_CP=("${CP[@]}")
         else
-            for i in "${!GPU_CT[@]}"; do GPU_CT[$i]=$(( GPU_CT[i] * 1000 )); done
+            if validate_curve GPU GPU_CT GPU_CP; then
+                for i in "${!GPU_CT[@]}"; do GPU_CT[$i]=$(( GPU_CT[i] * 1000 )); done
+            else
+                GPU_CT=("${CT[@]}")
+                GPU_CP=("${CP[@]}")
+            fi
         fi
     fi
 }
@@ -129,6 +136,28 @@ pwm_for_temp() {
     echo 255
 }
 
+validate_curve() {
+    local label=$1
+    local -n _ct=$2 _cp=$3
+    local n=${#_ct[@]} i
+    for (( i=0; i < n-1; i++ )); do
+        if (( _ct[i] >= _ct[i+1] )); then
+            echo "warning: $label CT not strictly increasing at index $i — using defaults" >&2
+            return 1
+        fi
+        if (( _cp[i] > _cp[i+1] )); then
+            echo "warning: $label CP not non-decreasing at index $i — using defaults" >&2
+            return 1
+        fi
+    done
+    for (( i=0; i < n; i++ )); do
+        if (( _cp[i] < 0 || _cp[i] > 255 )); then
+            echo "warning: $label CP[$i]=${_cp[i]} out of range [0,255] — using defaults" >&2
+            return 1
+        fi
+    done
+}
+
 profile_to_curves() {
     case "$1" in
         low-power)
@@ -177,6 +206,7 @@ on_reload() {
     load_conf
     last_up_temp=999999
     last_profile=""
+    desired_pwm=$cur_pwm
 }
 
 cleanup() {
@@ -195,16 +225,20 @@ start_inotify
 # Cold start: set correct PWM immediately without waiting one poll cycle
 cpu_temp_init=$(<"$CPU_TEMP" 2>/dev/null)
 if [[ -n "$cpu_temp_init" ]]; then
+    ema_cpu=$cpu_temp_init
     cur_pwm=$(pwm_for_temp CT CP "$cpu_temp_init")
     last_up_temp=$cpu_temp_init
 else
+    ema_cpu=0
     cur_pwm=255
     last_up_temp=999999
 fi
 apply "$cur_pwm" "${cpu_temp_init:-0}" "0"
 
 last_profile=""
+desired_pwm=$cur_pwm
 stall_cycles=0
+ema_gpu=0
 
 while true; do
     sleep "$POLL_SEC" & wait $!
@@ -221,33 +255,47 @@ while true; do
 
     cpu_temp=$(<"$CPU_TEMP")
     [[ -z "$cpu_temp" ]] && continue
+    ema_cpu=$(( (3 * cpu_temp + 7 * ema_cpu) / 10 ))
 
     [[ -z "$GPU_TEMP" || ! -f "$GPU_TEMP" ]] && GPU_TEMP=$(find_gpu_temp)
     gpu_temp=0
     [[ -n "$GPU_TEMP" ]] && gpu_temp=$(<"$GPU_TEMP")
+    if (( gpu_temp > 0 )); then
+        ema_gpu=$(( (3 * gpu_temp + 7 * ema_gpu) / 10 ))
+    else
+        ema_gpu=0
+    fi
 
-    cpu_target=$(pwm_for_temp CT CP "$cpu_temp")
+    cpu_target=$(pwm_for_temp CT CP "$ema_cpu")
     gpu_target=0
-    (( gpu_temp > 0 )) && gpu_target=$(pwm_for_temp GPU_CT GPU_CP "$gpu_temp")
+    (( ema_gpu > 0 )) && gpu_target=$(pwm_for_temp GPU_CT GPU_CP "$ema_gpu")
     target=$(( cpu_target > gpu_target ? cpu_target : gpu_target ))
 
     if [[ -f "$SILENT_FLAG" ]]; then
-        local_cpu_below=$(( cpu_temp < CT[${#CT[@]}-1] ))
-        local_gpu_below=$(( gpu_temp == 0 || gpu_temp < GPU_CT[${#GPU_CT[@]}-1] ))
+        local_cpu_below=$(( ema_cpu < CT[${#CT[@]}-1] ))
+        local_gpu_below=$(( ema_gpu == 0 || ema_gpu < GPU_CT[${#GPU_CT[@]}-1] ))
         (( local_cpu_below && local_gpu_below )) && target=0
     fi
 
-    effective_temp=$(( cpu_temp > gpu_temp ? cpu_temp : gpu_temp ))
+    effective_temp=$(( ema_cpu > ema_gpu ? ema_cpu : ema_gpu ))
 
-    if (( target > cur_pwm )); then
-        cur_pwm=$target
+    if (( target > desired_pwm )); then
+        desired_pwm=$target
         last_up_temp=$effective_temp
-    elif (( target < cur_pwm && effective_temp <= last_up_temp - HYST_MC )); then
-        cur_pwm=$target
+    elif (( target < desired_pwm && effective_temp <= last_up_temp - HYST_MC )); then
+        desired_pwm=$target
         last_up_temp=$effective_temp
     fi
 
-    if apply "$cur_pwm" "$cpu_temp" "$gpu_temp"; then
+    if (( desired_pwm > cur_pwm + SLEW_UP )); then
+        cur_pwm=$(( cur_pwm + SLEW_UP ))
+    elif (( desired_pwm < cur_pwm - SLEW_DOWN )); then
+        cur_pwm=$(( cur_pwm - SLEW_DOWN ))
+    else
+        cur_pwm=$desired_pwm
+    fi
+
+    if apply "$cur_pwm" "$ema_cpu" "$ema_gpu"; then
         if (( RPM_STALL_WARN && cur_pwm > 80 )); then
             (( stall_cycles++ ))
             if (( stall_cycles >= 5 )); then
