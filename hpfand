@@ -239,6 +239,7 @@ last_profile=""
 desired_pwm=$cur_pwm
 stall_cycles=0
 ema_gpu=0
+startup_cycles=15
 
 while true; do
     sleep "$POLL_SEC" & wait $!
@@ -255,13 +256,21 @@ while true; do
 
     cpu_temp=$(<"$CPU_TEMP")
     [[ -z "$cpu_temp" ]] && continue
-    ema_cpu=$(( (3 * cpu_temp + 7 * ema_cpu) / 10 ))
+    if (( startup_cycles > 0 )); then
+        ema_cpu=$(( (8 * cpu_temp + 2 * ema_cpu) / 10 ))
+    else
+        ema_cpu=$(( (3 * cpu_temp + 7 * ema_cpu) / 10 ))
+    fi
 
     [[ -z "$GPU_TEMP" || ! -f "$GPU_TEMP" ]] && GPU_TEMP=$(find_gpu_temp)
     gpu_temp=0
     [[ -n "$GPU_TEMP" ]] && gpu_temp=$(<"$GPU_TEMP")
     if (( gpu_temp > 0 )); then
-        ema_gpu=$(( (3 * gpu_temp + 7 * ema_gpu) / 10 ))
+        if (( startup_cycles > 0 )); then
+            ema_gpu=$(( (8 * gpu_temp + 2 * ema_gpu) / 10 ))
+        else
+            ema_gpu=$(( (3 * gpu_temp + 7 * ema_gpu) / 10 ))
+        fi
     else
         ema_gpu=0
     fi
@@ -289,11 +298,12 @@ while true; do
 
     if (( desired_pwm > cur_pwm + SLEW_UP )); then
         cur_pwm=$(( cur_pwm + SLEW_UP ))
-    elif (( desired_pwm < cur_pwm - SLEW_DOWN )); then
+    elif (( desired_pwm < cur_pwm - SLEW_DOWN && startup_cycles == 0 )); then
         cur_pwm=$(( cur_pwm - SLEW_DOWN ))
     else
         cur_pwm=$desired_pwm
     fi
+    (( startup_cycles > 0 )) && (( startup_cycles-- ))
 
     if apply "$cur_pwm" "$ema_cpu" "$ema_gpu"; then
         if (( RPM_STALL_WARN && cur_pwm > 80 )); then
