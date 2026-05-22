@@ -225,11 +225,10 @@ start_inotify
 cpu_temp_init=$(<"$CPU_TEMP" 2>/dev/null)
 if [[ -n "$cpu_temp_init" ]]; then
     ema_cpu=$cpu_temp_init
-    last_up_temp=$cpu_temp_init
 else
     ema_cpu=0
-    last_up_temp=999999
 fi
+last_up_temp=999999
 cur_pwm_hw=$(<"$HP_HWMON/pwm1" 2>/dev/null)
 [[ "$cur_pwm_hw" =~ ^[0-9]+$ ]] && cur_pwm=$cur_pwm_hw || cur_pwm=255
 apply "$cur_pwm" "${cpu_temp_init:-0}" "0"
