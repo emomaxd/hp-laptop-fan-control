@@ -20,6 +20,46 @@ conf_safe() {
     (( (8#$mode & 8#022) == 0 )) || { echo "warning: $CONF is group/world-writable — skipping" >&2; return 1; }
 }
 
+lerp() {
+    local dt=$(( $3 - $1 ))
+    (( dt == 0 )) && echo "$2" && return
+    echo $(( $2 + ($5 - $1) * ($4 - $2) / dt ))
+}
+
+pwm_for_temp() {
+    local -n _ct=$1 _cp=$2
+    local t=$3 n=${#_ct[@]}
+    (( t <= _ct[0] ))   && echo 0   && return
+    (( t >= _ct[n-1] )) && echo 255 && return
+    local i
+    for (( i=0; i < n-1; i++ )); do
+        (( t >= _ct[i] && t < _ct[i+1] )) && lerp "${_ct[i]}" "${_cp[i]}" "${_ct[i+1]}" "${_cp[i+1]}" "$t" && return
+    done
+    echo 255
+}
+
+validate_curve() {
+    local label=$1
+    local -n _ct=$2 _cp=$3
+    local n=${#_ct[@]} i
+    for (( i=0; i < n-1; i++ )); do
+        if (( _ct[i] >= _ct[i+1] )); then
+            echo "warning: $label CT not strictly increasing at index $i — using defaults" >&2
+            return 1
+        fi
+        if (( _cp[i] > _cp[i+1] )); then
+            echo "warning: $label CP not non-decreasing at index $i — using defaults" >&2
+            return 1
+        fi
+    done
+    for (( i=0; i < n; i++ )); do
+        if (( _cp[i] < 0 || _cp[i] > 255 )); then
+            echo "warning: $label CP[$i]=${_cp[i]} out of range [0,255] — using defaults" >&2
+            return 1
+        fi
+    done
+}
+
 load_conf() {
     CT=(40 50 60 72 82)
     CP=(0  30 80 170 240)
@@ -113,55 +153,6 @@ find_cpu_temp() {
     done
 }
 
-HP_HWMON=$(find_hwmon)
-CPU_TEMP=$(find_cpu_temp)
-GPU_TEMP=$(find_gpu_temp)
-
-[[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
-[[ -f "$CPU_TEMP" ]] || { echo "cpu temp sensor not found (tried coretemp, k10temp, zenpower)" >&2; exit 1; }
-
-load_conf
-
-lerp() {
-    local dt=$(( $3 - $1 ))
-    (( dt == 0 )) && echo "$2" && return
-    echo $(( $2 + ($5 - $1) * ($4 - $2) / dt ))
-}
-
-pwm_for_temp() {
-    local -n _ct=$1 _cp=$2
-    local t=$3 n=${#_ct[@]}
-    (( t <= _ct[0] ))   && echo 0   && return
-    (( t >= _ct[n-1] )) && echo 255 && return
-    local i
-    for (( i=0; i < n-1; i++ )); do
-        (( t >= _ct[i] && t < _ct[i+1] )) && lerp "${_ct[i]}" "${_cp[i]}" "${_ct[i+1]}" "${_cp[i+1]}" "$t" && return
-    done
-    echo 255
-}
-
-validate_curve() {
-    local label=$1
-    local -n _ct=$2 _cp=$3
-    local n=${#_ct[@]} i
-    for (( i=0; i < n-1; i++ )); do
-        if (( _ct[i] >= _ct[i+1] )); then
-            echo "warning: $label CT not strictly increasing at index $i — using defaults" >&2
-            return 1
-        fi
-        if (( _cp[i] > _cp[i+1] )); then
-            echo "warning: $label CP not non-decreasing at index $i — using defaults" >&2
-            return 1
-        fi
-    done
-    for (( i=0; i < n; i++ )); do
-        if (( _cp[i] < 0 || _cp[i] > 255 )); then
-            echo "warning: $label CP[$i]=${_cp[i]} out of range [0,255] — using defaults" >&2
-            return 1
-        fi
-    done
-}
-
 profile_to_curves() {
     case "$1" in
         low-power)
@@ -176,6 +167,7 @@ profile_to_curves() {
             CT=(35000 45000 58000 68000 78000)
             CP=(30 80 140 210 255)
             HYST_MC=4000; POLL_SEC=1 ;;
+        *) return ;;
     esac
     GPU_CT=("${CT[@]}")
     GPU_CP=("${CP[@]}")
@@ -215,6 +207,15 @@ cleanup() {
     exit
 }
 
+HP_HWMON=$(find_hwmon)
+CPU_TEMP=$(find_cpu_temp)
+GPU_TEMP=$(find_gpu_temp)
+
+[[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
+[[ -f "$CPU_TEMP" ]] || { echo "cpu temp sensor not found (tried coretemp, k10temp, zenpower)" >&2; exit 1; }
+
+load_conf
+
 trap on_reload USR1
 trap cleanup SIGTERM SIGINT
 
@@ -230,7 +231,7 @@ else
     last_up_temp=999999
 fi
 cur_pwm_hw=$(<"$HP_HWMON/pwm1" 2>/dev/null)
-cur_pwm=$(( cur_pwm_hw > 0 ? cur_pwm_hw : 255 ))
+[[ "$cur_pwm_hw" =~ ^[0-9]+$ ]] && cur_pwm=$cur_pwm_hw || cur_pwm=255
 apply "$cur_pwm" "${cpu_temp_init:-0}" "0"
 echo "info: started — cpu=$(( ${cpu_temp_init:-0} / 1000 ))°C pwm=$cur_pwm" >&2
 
@@ -256,9 +257,10 @@ while true; do
 
     cpu_temp=$(<"$CPU_TEMP")
     if [[ -z "$cpu_temp" ]]; then
-        if (( ++sensor_miss >= 3 )); then
+        (( ++sensor_miss ))
+        if (( sensor_miss >= 3 )); then
             apply 255 0 0
-            echo "warning: cpu temp unreadable for ${sensor_miss} cycles — fan at full speed" >&2
+            (( sensor_miss == 3 )) && echo "warning: cpu temp unreadable — fan at full speed" >&2
         fi
         continue
     fi
