@@ -12,6 +12,7 @@ CT=() CP=() GPU_CT=() GPU_CP=()
 HYST=6; POLL_SEC=2; HYST_MC=6000
 FOLLOW_PLATFORM_PROFILE=0; RPM_STALL_WARN=1
 SLEW_UP=100; SLEW_DOWN=20; MIN_PWM=0
+SILENT_OFF_BELOW=0; SILENT_OFF_BELOW_MC=0
 
 conf_safe() {
     local owner mode
@@ -72,6 +73,7 @@ load_conf() {
     SLEW_UP=100
     SLEW_DOWN=20
     MIN_PWM=0
+    SILENT_OFF_BELOW=0
 
     if [[ -f "$CONF" ]]; then
         if conf_safe; then
@@ -90,6 +92,11 @@ load_conf() {
     HYST_MC=$(( HYST * 1000 ))
     (( POLL_SEC > 0 )) || POLL_SEC=2
     (( MIN_PWM >= 0 && MIN_PWM <= 255 )) || MIN_PWM=0
+    if (( SILENT_OFF_BELOW > 0 )); then
+        SILENT_OFF_BELOW_MC=$(( SILENT_OFF_BELOW * 1000 ))
+    else
+        SILENT_OFF_BELOW_MC=${CT[${#CT[@]}-2]}
+    fi
 
     if (( ${#GPU_CT[@]} == 0 )); then
         GPU_CT=("${CT[@]}")
@@ -171,6 +178,11 @@ profile_to_curves() {
     esac
     GPU_CT=("${CT[@]}")
     GPU_CP=("${CP[@]}")
+    if (( SILENT_OFF_BELOW > 0 )); then
+        SILENT_OFF_BELOW_MC=$(( SILENT_OFF_BELOW * 1000 ))
+    else
+        SILENT_OFF_BELOW_MC=${CT[${#CT[@]}-2]}
+    fi
 }
 
 apply() {
@@ -178,8 +190,7 @@ apply() {
         echo "dry-run: pwm=$1 (cpu=${2}mc gpu=${3}mc)" >&2
         return 0
     fi
-    echo 1    > "$HP_HWMON/pwm1_enable" 2>/dev/null
-    echo "$1" > "$HP_HWMON/pwm1"         2>/dev/null
+    echo "$1" > "$HP_HWMON/pwm1" 2>/dev/null
 }
 
 start_inotify() {
@@ -231,11 +242,13 @@ fi
 last_up_temp=999999
 cur_pwm_hw=$(<"$HP_HWMON/pwm1" 2>/dev/null)
 [[ "$cur_pwm_hw" =~ ^[0-9]+$ ]] && cur_pwm=$cur_pwm_hw || cur_pwm=255
+(( ! DRY_RUN )) && echo 1 > "$HP_HWMON/pwm1_enable" 2>/dev/null
 apply "$cur_pwm" "${cpu_temp_init:-0}" "0"
 echo "info: started — cpu=$(( ${cpu_temp_init:-0} / 1000 ))°C pwm=$cur_pwm" >&2
 
 last_profile=""
 desired_pwm=$cur_pwm
+prev_pwm=$cur_pwm
 stall_cycles=0
 sensor_miss=0
 ema_gpu=0
@@ -290,9 +303,7 @@ while true; do
     target=$(( cpu_target > gpu_target ? cpu_target : gpu_target ))
 
     if [[ -f "$SILENT_FLAG" ]]; then
-        local_cpu_below=$(( ema_cpu < CT[${#CT[@]}-1] ))
-        local_gpu_below=$(( ema_gpu == 0 || ema_gpu < GPU_CT[${#GPU_CT[@]}-1] ))
-        (( local_cpu_below && local_gpu_below )) && target=0
+        (( ema_cpu < SILENT_OFF_BELOW_MC && (ema_gpu == 0 || ema_gpu < SILENT_OFF_BELOW_MC) )) && target=0
     fi
 
     effective_temp=$(( ema_cpu > ema_gpu ? ema_cpu : ema_gpu ))
@@ -316,12 +327,15 @@ while true; do
 
     (( MIN_PWM > 0 && cur_pwm > 0 && cur_pwm < MIN_PWM )) && cur_pwm=$MIN_PWM
 
-    apply "$cur_pwm" "$ema_cpu" "$ema_gpu"
+    if (( cur_pwm != prev_pwm )); then
+        apply "$cur_pwm" "$ema_cpu" "$ema_gpu"
+        prev_pwm=$cur_pwm
+    fi
 
     if (( RPM_STALL_WARN && cur_pwm > 80 )); then
         (( stall_cycles++ ))
         if (( stall_cycles >= 5 )); then
-            fan1=$(cat "$HP_HWMON/fan1_input" 2>/dev/null)
+            fan1=$(<"$HP_HWMON/fan1_input" 2>/dev/null)
             if [[ -n "$fan1" ]] && (( fan1 < 200 )); then
                 echo "warning: fan may be stalled — pwm=$cur_pwm but fan1=${fan1}rpm" >&2
             fi

@@ -1,6 +1,6 @@
 # hpfand
 
-Fan curve daemon for HP Victus/Omen laptops on Linux. The firmware resets fan settings periodically and ramps aggressively. This daemon re-applies a configurable PWM curve every poll cycle to keep fans under control.
+Fan curve daemon for HP Victus/Omen laptops on Linux. The firmware ramps fans aggressively. This daemon polls temperatures and drives a configurable PWM curve, writing a new value only when it changes — the kernel module's keep-alive timer holds manual mode in between.
 
 ## Compatibility
 
@@ -94,9 +94,13 @@ GPU_CP=(0  40 100 180 255)
 
 FOLLOW_PLATFORM_PROFILE=0  # set to 1 to auto-track power profile
 RPM_STALL_WARN=1           # warn in journal if fan stalls at high PWM
+SILENT_OFF_BELOW=0         # in silent mode, keep fans off below this °C
+                           # (0 = default to the curve's second-highest point)
 ```
 
 The daemon uses `max(cpu_pwm, gpu_pwm)` each cycle. Points are linearly interpolated. Ramp-up is immediate; ramp-down waits until temp drops `HYST` degrees below the last ramp-up point.
+
+In silent mode (`hpf toggle`), fans stay off until temperature reaches `SILENT_OFF_BELOW`, then follow the normal curve — so cooling engages with a smooth ramp instead of jumping straight to full speed. Raise it for more silence, lower it for an earlier ramp.
 
 If `inotify-tools` is installed, the conf reloads automatically on save. Test without writing to hardware:
 
