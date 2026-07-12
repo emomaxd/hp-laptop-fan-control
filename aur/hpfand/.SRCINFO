@@ -20,7 +20,7 @@ pkgbase = hpfand
 	source = hpfand-2.4.0.tar.gz::https://github.com/emomaxd/hpfand/archive/refs/tags/v2.4.0.tar.gz
 	source = hpfand.install
 	source = hpfand.sysusers
-	sha256sums = SKIP
+	sha256sums = 72270d16af05d944d6b721d3a27f4a8983253df293e681402735ce3b89294f8e
 	sha256sums = bd13cb5e4614ed99ff8ada255e4cfdc06c34f80ba9d635f0dae7d86e5f72e5c8
 	sha256sums = 1dcda274e76f3d91a447cd20e0f4be9e288a566a76dcf34d30a0897a74a7e74c
 
