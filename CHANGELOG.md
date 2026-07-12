@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.4.0] - 2026-07-12
+
+- Make PWM writes transactional and retry failed sysfs writes.
+- Keep fail-safe state synchronized after CPU sensor failures and debounce GPU sensor loss.
+- Fix startup down-slew and hysteresis behavior; honor configured curve endpoints.
+- Replace root-level config sourcing with a strict numeric parser and full validation.
+- Watch the config directory so atomic editor saves reload correctly.
+- Restrict silent-mode access to the `hpfand` group and harden the systemd service.
+- Verify downloaded hp-wmi source before building/loading the kernel module.
+- Add regression tests for curves, slew limiting, and config parsing.
+- Fix initial/sysfs reads that incorrectly combined Bash's optimized file read with stderr redirection.
+- Ensure reinstalling restarts an already-running daemon.
+
 ## [2.0.0] - 2026-05-12
 
 Project renamed from `hp-laptop-fan-control` to `hpfand`. Breaking change for existing installs — run `sudo ./uninstall.sh` then `sudo ./install.sh`.

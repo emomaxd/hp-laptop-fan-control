@@ -1,5 +1,5 @@
 pkgname=hpfand
-pkgver=2.3.0
+pkgver=2.4.0
 pkgrel=1
 pkgdesc="Fan curve daemon for HP Victus/Omen laptops"
 arch=('any')
@@ -13,9 +13,11 @@ optdepends=(
     'hp-wmi-dkms: patched kernel module for pre-7.1 kernels'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/emomaxd/hpfand/archive/refs/tags/v$pkgver.tar.gz"
-        "hpfand.install")
-sha256sums=('d0d39a26311f4d39caef8568516c1d59310942a76d3481cf5252413a2641664f'
-            '29e104ecfb8a490c34c605b96263d3e1b68e254ba3fd1647d1aa1bcc2cf3ece6')
+        "hpfand.install"
+        "hpfand.sysusers")
+sha256sums=('SKIP'
+            'bd13cb5e4614ed99ff8ada255e4cfdc06c34f80ba9d635f0dae7d86e5f72e5c8'
+            '1dcda274e76f3d91a447cd20e0f4be9e288a566a76dcf34d30a0897a74a7e74c')
 
 package() {
     cd "$pkgname-$pkgver"
@@ -25,4 +27,5 @@ package() {
 
     sed "s|HPFAND_BIN|/usr/bin/hpfand|" hpfand.service \
         | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/hpfand.service"
+    install -Dm644 "$srcdir/hpfand.sysusers" "$pkgdir/usr/lib/sysusers.d/hpfand.conf"
 }

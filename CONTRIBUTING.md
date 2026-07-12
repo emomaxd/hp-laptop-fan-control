@@ -1,5 +1,12 @@
 # Contributing
 
+Run the regression suite before submitting changes:
+
+```sh
+tests/test_hpfand.sh
+bash -n hpfand hpf install.sh update.sh uninstall.sh build-module.sh
+```
+
 ## Reporting issues
 
 Include the following in a bug report:

@@ -21,6 +21,8 @@ Supported boards (`cat /sys/class/dmi/id/board_name`): `8BBE 8BD4 8BD5 8C99 8C9C
 git clone https://github.com/emomaxd/hpfand
 cd hpfand
 sudo ./install.sh
+# Optional, allows this user to toggle silent mode without sudo:
+sudo usermod -aG hpfand "$USER"   # log out/in once afterwards
 ```
 
 Or via AUR (Arch-based):
@@ -83,7 +85,7 @@ pwm:     110/255
 
 ```sh
 CT=(40 50 60 72 82)    # CPU temp thresholds in °C
-CP=(0  30 80 170 240)  # PWM values (0–255) at each threshold
+CP=(0  30 80 170 255)  # PWM values (0–255) at each threshold
 
 HYST=6                 # ramp-down hysteresis in °C
 POLL_SEC=2
@@ -96,9 +98,17 @@ FOLLOW_PLATFORM_PROFILE=0  # set to 1 to auto-track power profile
 RPM_STALL_WARN=1           # warn in journal if fan stalls at high PWM
 SILENT_OFF_BELOW=0         # in silent mode, keep fans off below this °C
                            # (0 = default to the curve's second-highest point)
+SLEW_UP=100                # maximum PWM increase per poll
+SLEW_DOWN=20               # maximum PWM decrease per poll
+MIN_PWM=0                  # optional non-zero floor while fans are running
 ```
 
-The daemon uses `max(cpu_pwm, gpu_pwm)` each cycle. Points are linearly interpolated. Ramp-up is immediate; ramp-down waits until temp drops `HYST` degrees below the last ramp-up point.
+The config is a restricted data file, not a shell script. Only the documented
+numeric assignments and one-line numeric arrays are accepted. Curve endpoint
+PWM values are honored; use `255` explicitly at the last point when full speed
+is required.
+
+The daemon uses `max(cpu_pwm, gpu_pwm)` each cycle. Points are linearly interpolated. Ramp-up begins immediately and follows `SLEW_UP`; ramp-down waits until temp drops `HYST` degrees below the last ramp-up point and follows `SLEW_DOWN`.
 
 In silent mode (`hpf toggle`), fans stay off until temperature reaches `SILENT_OFF_BELOW`, then follow the normal curve — so cooling engages with a smooth ramp instead of jumping straight to full speed. Raise it for more silence, lower it for an earlier ramp.
 
@@ -134,6 +144,8 @@ sudo ./build-module.sh
 ```
 
 This sparse-clones only the driver file from the patched branch, builds the module, loads it, and installs it so it survives reboots (until the next kernel update). Then run `sudo ./install.sh` as usual.
+Before compiling or loading anything, the script verifies the driver source
+against the reviewed SHA-256 also used by the DKMS package.
 
 > The module only persists for the current kernel version. After a kernel update, run `build-module.sh` again — or use `hp-wmi-dkms` (AUR) to handle this automatically.
 

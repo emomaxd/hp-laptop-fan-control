@@ -23,7 +23,12 @@ EOF
 need_root() { [[ $EUID -eq 0 ]] || { echo "error: requires root"; exit 1; }; }
 
 find_hwmon() {
-    grep -rl "^hp$" /sys/class/hwmon/*/name 2>/dev/null | head -1 | xargs -r dirname
+    local f dir
+    for f in /sys/class/hwmon/*/name; do
+        [[ -f "$f" && "$(<"$f")" == hp ]] || continue
+        dir=$(dirname "$f")
+        [[ -e "$dir/pwm1" && -e "$dir/pwm1_enable" ]] && echo "$dir" && return
+    done
 }
 
 find_gpu_temp() {
@@ -129,9 +134,9 @@ cmd_set() {
 
     case "$name" in
         silent)
-            ct="50 60 70 82 90"; cp="0 20 60 150 220"; hyst=8; poll=4 ;;
+            ct="50 60 70 82 90"; cp="0 20 60 150 255"; hyst=8; poll=4 ;;
         balanced)
-            ct="40 50 60 72 82"; cp="0 30 80 170 240"; hyst=6; poll=2 ;;
+            ct="40 50 60 72 82"; cp="0 30 80 170 255"; hyst=6; poll=2 ;;
         performance)
             ct="35 45 58 68 78"; cp="30 80 140 210 255"; hyst=4; poll=1 ;;
         *)
@@ -169,6 +174,11 @@ EOF
 }
 
 cmd_toggle() {
+    if [[ ! -w "$(dirname "$SILENT_FLAG")" ]]; then
+        echo "error: silent mode requires membership in the hpfand group"
+        echo "run: sudo usermod -aG hpfand $(id -un)  (then log in again)"
+        exit 1
+    fi
     if [[ -f "$SILENT_FLAG" ]]; then
         rm -f "$SILENT_FLAG"
         notify-send "fan" "normal" 2>/dev/null; echo "fan: normal"

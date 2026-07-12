@@ -11,7 +11,25 @@ TimeoutStopSec=5
 StandardOutput=journal
 StandardError=journal
 StateDirectory=hpfand
-StateDirectoryMode=0777
+StateDirectoryMode=0770
+ExecStartPre=/bin/chgrp hpfand /var/lib/hpfand
+ExecStartPre=/bin/chmod 0770 /var/lib/hpfand
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
