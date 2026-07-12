@@ -1,198 +1,164 @@
 # hpfand
 
-Fan curve daemon for HP Victus/Omen laptops on Linux. The firmware ramps fans aggressively. This daemon polls temperatures and drives a configurable PWM curve, writing a new value only when it changes — the kernel module's keep-alive timer holds manual mode in between.
+`hpfand` is a fan-curve daemon for HP Victus and Omen laptops. It reads CPU and
+GPU temperatures from hwmon and writes a single PWM value to the native
+`hp_wmi` interface.
 
-## Compatibility
-
-```sh
-ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1 2>/dev/null \
-  && echo "supported" || echo "pwm1 not found — see Getting the module"
-```
-
-Supported boards (`cat /sys/class/dmi/id/board_name`): `8BBE 8BD4 8BD5 8C99 8C9C 8D41` (Victus), `8BAB 8BCA 8BCD 8C76 8C78 8A4D` (Omen).
-
-**Linux ≥ 7.1:** skip to [Install](#install). **Older kernels:** see [Getting the module](#getting-the-module).
-
----
-
-## Install
-
-```sh
-git clone https://github.com/emomaxd/hpfand
-cd hpfand
-sudo ./install.sh
-# Optional, allows this user to toggle silent mode without sudo:
-sudo usermod -aG hpfand "$USER"   # log out/in once afterwards
-```
-
-Or via AUR (Arch-based):
-
-```sh
-paru -S hpfand                  # Linux >= 7.1
-paru -S hpfand hp-wmi-dkms      # older kernels
-```
-
----
-
-## Usage
-
-```sh
-hpf status              # cpu/gpu temp, fan rpm, pwm, active preset
-hpf status -w           # watch mode — refresh every 2s
-hpf presets             # list available presets
-hpf toggle              # toggle silent mode on/off — no root needed, persists across reboots
-hpf log                 # show last 50 journal entries
-```
-
-```sh
-sudo hpf set balanced     # apply a preset (silent / balanced / performance)
-sudo hpf follow           # auto-track system power profile
-sudo hpf pwm 120          # lock fans at fixed pwm — stops daemon, no thermal protection
-sudo hpf edit             # edit /etc/hpfand.conf in $EDITOR
-```
-
-Example output of `hpf status`:
-
-```
+```text
+$ hpf status
 preset:  auto (follow profile)
 mode:    manual (daemon active)
 profile: balanced
 ---
-cpu:     61°C
-gpu:     43°C
-fan1:    2900 rpm
-fan2:    2900 rpm
-pwm:     110/255
+cpu:     54°C
+fan1:    1200 rpm
+fan2:    1200 rpm
+pwm:     52/255
 ```
 
----
+No GUI, background framework or EC register poking. The daemon is a Bash
+process managed by systemd.
 
-## Presets
-
-| preset | fans off until | max speed at | hysteresis | poll |
-|--------|----------------|--------------|------------|------|
-| silent | 50°C | 90°C | 8°C | 4s |
-| balanced | 40°C | 82°C | 6°C | 2s |
-| performance | 35°C | 78°C | 4°C | 1s |
-
-`sudo hpf follow` maps `low-power`→silent, `balanced`→balanced, `performance`→performance automatically.
-
----
-
-## Custom curve
-
-`/etc/hpfand.conf`:
+## Check support
 
 ```sh
-CT=(40 50 60 72 82)    # CPU temp thresholds in °C
-CP=(0  30 80 170 255)  # PWM values (0–255) at each threshold
-
-HYST=6                 # ramp-down hysteresis in °C
-POLL_SEC=2
-
-# Optional: separate GPU curve (defaults to CPU curve if omitted)
-GPU_CT=(45 55 65 75 85)
-GPU_CP=(0  40 100 180 255)
-
-FOLLOW_PLATFORM_PROFILE=0  # set to 1 to auto-track power profile
-RPM_STALL_WARN=1           # warn in journal if fan stalls at high PWM
-SILENT_OFF_BELOW=0         # in silent mode, keep fans off below this °C
-                           # (0 = default to the curve's second-highest point)
-SLEW_UP=100                # maximum PWM increase per poll
-SLEW_DOWN=20               # maximum PWM decrease per poll
-MIN_PWM=0                  # optional non-zero floor while fans are running
+ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1 >/dev/null 2>&1 \
+  && echo supported || echo unavailable
 ```
 
-The config is a restricted data file, not a shell script. Only the documented
-numeric assignments and one-line numeric arrays are accepted. Curve endpoint
-PWM values are honored; use `255` explicitly at the last point when full speed
-is required.
+The interface is available in the upstream kernel on supported boards from
+Linux 7.1. Older kernels need the patched module described below. See the
+[hardware matrix](docs/hardware.md) for board IDs and verified machines.
 
-The daemon uses `max(cpu_pwm, gpu_pwm)` each cycle. Points are linearly interpolated. Ramp-up begins immediately and follows `SLEW_UP`; ramp-down waits until temp drops `HYST` degrees below the last ramp-up point and follows `SLEW_DOWN`.
+## Install
 
-In silent mode (`hpf toggle`), fans stay off until temperature reaches `SILENT_OFF_BELOW`, then follow the normal curve — so cooling engages with a smooth ramp instead of jumping straight to full speed. Raise it for more silence, lower it for an earlier ramp.
+Arch Linux:
 
-If `inotify-tools` is installed, the conf reloads automatically on save. Test without writing to hardware:
+```sh
+paru -S hpfand
+sudo systemctl enable --now hpfand
+```
+
+From source:
+
+```sh
+git clone https://github.com/emomaxd/hpfand.git
+cd hpfand
+sudo ./install.sh
+```
+
+To let the current user toggle silent mode without root:
+
+```sh
+sudo usermod -aG hpfand "$USER"
+```
+
+Log out and back in after changing group membership.
+
+## Commands
+
+```text
+hpf status              show temperatures, RPM, PWM and active profile
+hpf status -w           refresh status every two seconds
+hpf toggle              toggle silent mode
+hpf presets             list built-in curves
+hpf log 50              read daemon logs
+
+sudo hpf set balanced   apply silent, balanced or performance
+sudo hpf follow         follow the ACPI platform power profile
+sudo hpf edit           edit /etc/hpfand.conf and restart the daemon
+sudo hpf pwm 120        stop the daemon and hold a fixed PWM value
+```
+
+`hpf pwm` disables the daemon's thermal response. Apply a preset to restore it.
+
+## Control loop
+
+Each poll reads the CPU package temperature and, when active, the discrete GPU
+temperature. The higher PWM request wins. Curve points are linearly
+interpolated; increases happen immediately subject to `SLEW_UP`, while
+decreases wait for the configured hysteresis and follow `SLEW_DOWN`.
+
+The daemon only updates sysfs when the PWM changes. Failed writes are retried.
+Three invalid CPU readings force PWM 255. On a clean shutdown, control returns
+to firmware mode.
+
+`hpf follow` maps platform profiles as follows:
+
+| platform profile | curve |
+|---|---|
+| `low-power` | silent |
+| `balanced` | balanced |
+| `performance` | performance |
+
+## Configuration
+
+`/etc/hpfand.conf` is a restricted numeric data file, not a shell script.
+
+```sh
+CT=(40 50 60 72 82)
+CP=(0 30 80 170 255)
+
+GPU_CT=(45 55 65 75 85)
+GPU_CP=(0 40 100 180 255)
+
+HYST=6
+POLL_SEC=2
+SLEW_UP=100
+SLEW_DOWN=20
+MIN_PWM=0
+
+FOLLOW_PLATFORM_PROFILE=0
+RPM_STALL_WARN=1
+SILENT_OFF_BELOW=0
+```
+
+`CT`/`GPU_CT` are degrees Celsius. `CP`/`GPU_CP` are PWM values from 0 to 255.
+GPU arrays are optional and default to the CPU curve. `SILENT_OFF_BELOW=0`
+uses the second-highest curve point.
+
+If `inotify-tools` is installed, atomic saves reload the file without a service
+restart. Inspect curve output without touching PWM:
 
 ```sh
 sudo hpfand --dry-run
 ```
 
----
+## Kernels before 7.1
 
-<details open>
-<summary><h2>Getting the module</h2></summary>
-
-The `pwm1` hwmon interface is in the in-tree `hp_wmi` driver. The required fixes landed in **Linux 7.1** ([Phoronix](https://www.phoronix.com/news/Linux-7.1-x86-Platform-Drivers), [kernel.org](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=da6b5aae84beb0917ecb0c9fbc71169d145397ff)).
-
-**Older kernels:** use `build-module.sh` to build and load the patched driver automatically.
-
-### Requirements
-
-| Distro | Command |
-|--------|---------|
-| Arch / Manjaro | `sudo pacman -S linux-headers` |
-| Ubuntu / Debian | `sudo apt install linux-headers-$(uname -r)` |
-| Fedora | `sudo dnf install kernel-devel` |
-
-Also make sure `git` and `make` are installed (`base-devel` / `build-essential` cover both).
-
-### Build and load
+Install headers for the running kernel, then build the reviewed `hp_wmi`
+backport:
 
 ```sh
 sudo ./build-module.sh
+sudo ./install.sh
 ```
 
-This sparse-clones only the driver file from the patched branch, builds the module, loads it, and installs it so it survives reboots (until the next kernel update). Then run `sudo ./install.sh` as usual.
-Before compiling or loading anything, the script verifies the driver source
-against the reviewed SHA-256 also used by the DKMS package.
+The script verifies the driver source against a pinned SHA-256 before compiling
+or loading it. The module must be rebuilt after a kernel update. Arch users can
+instead install `hp-wmi-dkms` from the AUR.
 
-> The module only persists for the current kernel version. After a kernel update, run `build-module.sh` again — or use `hp-wmi-dkms` (AUR) to handle this automatically.
+The upstream driver work is tracked in
+[`hp-wmi-victus-fan-v4`](https://github.com/emomaxd/linux/commits/hp-wmi-victus-fan-v4).
 
-<details>
-<summary>Manual steps (if the script doesn't work)</summary>
+## Troubleshooting
 
-```sh
-git clone https://github.com/emomaxd/linux -b hp-wmi-victus-fan-v4 --depth=1
-cd linux
-mkdir /tmp/hp-wmi-build
-cp drivers/platform/x86/hp/hp-wmi.c /tmp/hp-wmi-build/
-echo 'obj-m += hp-wmi.o' > /tmp/hp-wmi-build/Makefile
-make -C /lib/modules/$(uname -r)/build M=/tmp/hp-wmi-build modules
-sudo rmmod hp_wmi
-sudo insmod /tmp/hp-wmi-build/hp-wmi.ko
-# persist until next kernel update:
-sudo cp /tmp/hp-wmi-build/hp-wmi.ko /lib/modules/$(uname -r)/updates/hp-wmi.ko
-sudo depmod -a
-```
+- `hp-wmi hwmon not found`: the running kernel does not expose the interface,
+  or the board is not supported.
+- Fan speed does not change: check `hpf status` and `hpf log 50`; mode must be
+  `manual (daemon active)`.
+- GPU temperature is absent: a discrete GPU in D3cold has no active hwmon
+  sensor. It is detected when the GPU wakes.
+- Kernel updated and PWM disappeared: rebuild the backported module or install
+  its DKMS package.
 
-</details>
-
-Patches in [`hp-wmi-victus-fan-v4`](https://github.com/emomaxd/linux/commits/hp-wmi-victus-fan-v4): return value fixes, keep-alive timer, gpu_delta underflow, concurrent access locking.
-
-</details>
-
----
-
-<details>
-<summary><h2>Troubleshooting</h2></summary>
-
-**Daemon not starting — `hp-wmi hwmon not found`** — module not loaded. See [Getting the module](#getting-the-module).
-
-**Fan speed doesn't change** — run `hpf status` (mode should be `manual (daemon active)`) and `hpf log 20` for errors.
-
-**`build-module.sh` fails at `make`** — kernel headers missing. Install for your kernel (`pacman -S linux-headers` / `apt install linux-headers-$(uname -r)`) then retry.
-
-**Fans wrong after kernel update** — module is version-specific. Run `sudo ./build-module.sh` again, or use `hp-wmi-dkms` (AUR).
-
-**GPU temp not shown** — dGPU is in D3cold (off). Appears automatically when GPU becomes active.
-
-</details>
-
----
+For new hardware, open a
+[compatibility report](https://github.com/emomaxd/hpfand/issues/new?template=hardware.yml).
 
 ## Uninstall
 
 ```sh
 sudo ./uninstall.sh
 ```
+
+Licensed under GPL-2.0-only.

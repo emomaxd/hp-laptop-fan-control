@@ -1,0 +1,10 @@
+changelog:
+  categories:
+    - title: Safety and fixes
+      labels: [bug, security]
+    - title: Hardware support
+      labels: [hardware]
+    - title: Changes
+      labels: [enhancement]
+    - title: Other
+      labels: ["*"]

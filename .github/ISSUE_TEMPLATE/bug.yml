@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a daemon, CLI, packaging, or thermal-safety problem
+title: "bug: "
+labels: [bug]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed serial numbers, UUIDs, and unrelated logs.
+          required: true
+        - label: I am running the latest hpfand release.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: hpfand version
+      placeholder: v2.4.0
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Product and board ID
+      placeholder: Victus 16-r1xxx, 8C99
+    validations:
+      required: true
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel
+      placeholder: 7.1.3-arch1-1
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Use a safe reproduction. Do not deliberately overheat the machine.
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: hpf status
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Recent daemon log
+      description: Output of journalctl -u hpfand -n 50 --no-pager
+      render: text
+    validations:
+      required: true

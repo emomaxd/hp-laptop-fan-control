@@ -1,0 +1,71 @@
+name: Hardware compatibility
+description: Report a working or unsupported Victus/Omen model
+title: "hardware: "
+labels: [hardware]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include serial numbers, UUIDs, or a full dmidecode dump.
+  - type: input
+    id: product
+    attributes:
+      label: Product name
+      description: Output of cat /sys/class/dmi/id/product_name
+      placeholder: Victus by HP Gaming Laptop 16-r1xxx
+    validations:
+      required: true
+  - type: input
+    id: board
+    attributes:
+      label: Board ID
+      description: Output of cat /sys/class/dmi/id/board_name
+      placeholder: 8C99
+    validations:
+      required: true
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel
+      description: Output of uname -r
+      placeholder: 7.1.3-arch1-1
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      placeholder: Arch Linux
+    validations:
+      required: true
+  - type: textarea
+    id: pwm
+    attributes:
+      label: PWM interface
+      description: Output of ls -l /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: hpf status
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Both fans respond correctly
+        - One fan responds correctly
+        - PWM is present but fans do not respond
+        - PWM interface is missing
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Describe the tested presets and any unexpected behavior.

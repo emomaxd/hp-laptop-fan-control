@@ -1,35 +1,34 @@
 # Contributing
 
-Run the regression suite before submitting changes:
+Hardware reports are as useful as code. Use the compatibility issue template
+for a machine that is not yet listed in `docs/hardware.md`.
 
-```sh
-tests/test_hpfand.sh
-bash -n hpfand hpf install.sh update.sh uninstall.sh build-module.sh
-```
+## Before opening an issue
 
-## Reporting issues
-
-Include the following in a bug report:
+Run:
 
 ```sh
 uname -r
 cat /sys/class/dmi/id/board_name
 cat /sys/class/dmi/id/product_name
-ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1 2>/dev/null || echo "hwmon not found"
+ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1 2>/dev/null
 hpf status
-journalctl -u hpfand -n 30 --no-pager
+journalctl -u hpfand -n 50 --no-pager
 ```
 
-For hardware compatibility reports (new board, fan behaves wrong), the board name and a description of the symptom is enough.
+Remove serial numbers, UUIDs and unrelated journal output.
 
-## Submitting patches
+## Patches
 
-- Keep changes minimal — match the style of the surrounding code.
-- One logical change per commit.
-- Test with `sudo hpfand --dry-run` before submitting.
+Keep changes small and preserve the fail-safe behavior. Run:
 
-Open a pull request against `master`.
+```sh
+bash -n hpfand hpf install.sh update.sh uninstall.sh build-module.sh
+tests/test_hpfand.sh
+git diff --check
+```
 
-## Kernel driver
-
-The underlying `hp_wmi` fixes are landing in **Linux 7.1**. Until then, use `build-module.sh` to build the patched module. Kernel-level issues belong in the [linux fork](https://github.com/emomaxd/linux/tree/hp-wmi-victus-fan-v4), not here.
+Test control-loop changes with `sudo hpfand --dry-run` before writing to
+hardware. Kernel driver changes belong in the
+[`hp-wmi-victus-fan-v4`](https://github.com/emomaxd/linux/tree/hp-wmi-victus-fan-v4)
+tree.

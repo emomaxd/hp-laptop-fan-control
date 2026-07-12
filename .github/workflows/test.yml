@@ -1,0 +1,20 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check syntax
+        run: bash -n hpfand hpf install.sh update.sh uninstall.sh build-module.sh tests/test_hpfand.sh
+      - name: Run regression tests
+        run: tests/test_hpfand.sh
+      - name: Check whitespace
+        run: git show --check --format= HEAD
