@@ -20,6 +20,7 @@ commands:
   toggle              toggle silent mode on/off (persists across reboots)
   log [N]             show last N journal entries (default 50)
   edit                open $CONF in \$EDITOR — requires root
+  check               validate $CONF without starting the daemon
   presets             list available presets
 EOF
 }
@@ -195,7 +196,7 @@ cmd_set() {
             exit 1 ;;
     esac
 
-    cat > "$CONF" <<EOF
+    if ! write_config <<EOF
 # preset: $name
 CT=($ct)
 CP=($cp)
@@ -203,24 +204,38 @@ HYST=$hyst
 POLL_SEC=$poll
 FOLLOW_PLATFORM_PROFILE=0
 EOF
-    systemctl restart hpfand 2>/dev/null \
-        && echo "applied: $name" \
-        || echo "applied: $name (restart daemon manually)"
+    then
+        echo "error: failed to save $CONF" >&2
+        return 1
+    fi
+    if "$SYSTEMCTL" restart hpfand 2>/dev/null; then
+        echo "applied: $name"
+    else
+        echo "error: preset saved but hpfand failed to restart" >&2
+        return 1
+    fi
 }
 
 cmd_follow() {
     need_root
-    if [[ ! -f /sys/firmware/acpi/platform_profile ]]; then
+    if [[ ! -f "$SYSFS_ROOT/firmware/acpi/platform_profile" ]]; then
         echo "error: /sys/firmware/acpi/platform_profile not found — power-profiles-daemon or similar required"
         exit 1
     fi
-    cat > "$CONF" <<EOF
+    if ! write_config <<EOF
 # preset: auto
 FOLLOW_PLATFORM_PROFILE=1
 EOF
-    systemctl restart hpfand 2>/dev/null \
-        && echo "follow: tracking platform profile ($(</sys/firmware/acpi/platform_profile))" \
-        || echo "follow: enabled (restart daemon manually)"
+    then
+        echo "error: failed to save $CONF" >&2
+        return 1
+    fi
+    if "$SYSTEMCTL" restart hpfand 2>/dev/null; then
+        echo "follow: tracking platform profile ($( <"$SYSFS_ROOT/firmware/acpi/platform_profile"))"
+    else
+        echo "error: follow mode saved but hpfand failed to restart" >&2
+        return 1
+    fi
 }
 
 cmd_toggle() {
@@ -231,23 +246,58 @@ cmd_toggle() {
     fi
     if [[ -f "$SILENT_FLAG" ]]; then
         rm -f "$SILENT_FLAG"
-        notify-send "fan" "normal" 2>/dev/null; echo "fan: normal"
+        notify-send "fan" "normal" 2>/dev/null || true
+        echo "fan: normal"
     else
         touch "$SILENT_FLAG" 2>/dev/null || { echo "error: cannot write $SILENT_FLAG"; exit 1; }
-        notify-send "fan" "silent" 2>/dev/null; echo "fan: silent"
+        notify-send "fan" "silent" 2>/dev/null || true
+        echo "fan: silent"
     fi
 }
 
 cmd_log() {
     local lines=${1:-50}
+    if [[ ! "$lines" =~ ^[0-9]+$ ]] || (( lines <= 0 )); then
+        echo "error: line count must be a positive integer" >&2
+        return 1
+    fi
     journalctl -u hpfand -n "$lines" --no-pager -o short
 }
 
 cmd_edit() {
     need_root
-    [[ ! -f "$CONF" ]] && cmd_set balanced >/dev/null
-    ${EDITOR:-nano} "$CONF"
-    systemctl restart hpfand || echo "warning: failed to restart daemon — do it manually"
+    local tmp editor
+    local -a editor_cmd
+    tmp=$(mktemp)
+    if [[ -f "$CONF" ]]; then
+        cp "$CONF" "$tmp"
+    else
+        printf '%s\n' '# preset: balanced' 'CT=(40 50 60 72 82)' \
+            'CP=(0 30 80 170 255)' 'HYST=6' 'POLL_SEC=2' \
+            'FOLLOW_PLATFORM_PROFILE=0' > "$tmp"
+    fi
+    editor=${EDITOR:-nano}
+    read -r -a editor_cmd <<< "$editor"
+    if ! "${editor_cmd[@]}" "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    if ! "$HPFAND_BIN" --check-config "$tmp"; then
+        rm -f "$tmp"
+        echo "error: edited configuration was not installed" >&2
+        return 1
+    fi
+    if ! write_config < "$tmp"; then
+        rm -f "$tmp"
+        echo "error: failed to save $CONF" >&2
+        return 1
+    fi
+    rm -f "$tmp"
+    "$SYSTEMCTL" restart hpfand || { echo "error: failed to restart daemon" >&2; return 1; }
+}
+
+cmd_check() {
+    "$HPFAND_BIN" --check-config "$CONF"
 }
 
 cmd_presets() {
