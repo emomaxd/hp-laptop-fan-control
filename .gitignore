@@ -1,5 +1,0 @@
-aur/*/*.tar.gz
-aur/*/*.tar.xz
-aur/*/*.c
-aur/*/src/
-aur/*/pkg/

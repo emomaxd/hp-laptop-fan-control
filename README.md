@@ -32,13 +32,6 @@ Linux 7.1. Older kernels need the patched module described below. See the
 
 ## Install
 
-Arch Linux:
-
-```sh
-paru -S hpfand
-sudo systemctl enable --now hpfand
-```
-
 From source:
 
 ```sh
@@ -135,8 +128,7 @@ sudo ./install.sh
 ```
 
 The script verifies the driver source against a pinned SHA-256 before compiling
-or loading it. The module must be rebuilt after a kernel update. Arch users can
-instead install `hp-wmi-dkms` from the AUR.
+or loading it. The module must be rebuilt after a kernel update.
 
 The upstream driver work is tracked in
 [`hp-wmi-victus-fan-v4`](https://github.com/emomaxd/linux/commits/hp-wmi-victus-fan-v4).
@@ -149,8 +141,7 @@ The upstream driver work is tracked in
   `manual (daemon active)`.
 - GPU temperature is absent: a discrete GPU in D3cold has no active hwmon
   sensor. It is detected when the GPU wakes.
-- Kernel updated and PWM disappeared: rebuild the backported module or install
-  its DKMS package.
+- Kernel updated and PWM disappeared: rebuild the backported module.
 
 For new hardware, open a
 [compatibility report](https://github.com/emomaxd/hpfand/issues/new?template=hardware.yml).

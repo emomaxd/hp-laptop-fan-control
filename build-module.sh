@@ -22,8 +22,8 @@ command -v git  >/dev/null 2>&1 || { echo "error: git not found — install git 
 command -v make >/dev/null 2>&1 || { echo "error: make not found — install make/base-devel and retry"; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "error: sha256sum not found"; exit 1; }
 
-# Keep this in sync with aur/hp-wmi-dkms/PKGBUILD. Refuse to load code if the
-# mutable upstream branch no longer contains the reviewed source.
+# Refuse to load code if the mutable upstream branch no longer contains the
+# reviewed source.
 HP_WMI_SHA256=b78469d1ebe5ce82f64a8998f80b1b0480918412c4bf80171e6b7ff78653eb0f
 
 BUILD_DIR=$(mktemp -d)
