@@ -249,7 +249,7 @@ find_cpu_temp() {
     done
     # AMD k10temp / zenpower: prefer Tdie (no offset) over Tctl which has +10°C on some Zen
     local name
-    for f in /sys/class/hwmon/*/name; do
+    for f in "$SYSFS_ROOT"/class/hwmon/*/name; do
         [[ -f "$f" ]] || continue
         name=$(<"$f")
         [[ "$name" == "k10temp" || "$name" == "zenpower" ]] || continue
@@ -260,6 +260,27 @@ find_cpu_temp() {
         done
         [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return
     done
+}
+
+find_fan_inputs() {
+    local f
+    for f in "$HP_HWMON"/fan*_input; do
+        [[ -f "$f" ]] && echo "$f"
+    done
+}
+
+read_max_temp() {
+    local path value max=0
+    for path in "$@"; do
+        value=$(cat "$path" 2>/dev/null) || continue
+        [[ "$value" =~ ^[0-9]+$ ]] || continue
+        (( value > 0 && value <= 150000 && value > max )) && max=$value
+    done
+    echo "$max"
+}
+
+control_temp() {
+    (( $1 > $2 )) && echo "$1" || echo "$2"
 }
 
 profile_to_curves() {
@@ -278,14 +299,16 @@ profile_to_curves() {
             HYST_MC=4000; POLL_SEC=1 ;;
         *) return ;;
     esac
-    GPU_CT=("${CT[@]}")
-    GPU_CP=("${CP[@]}")
+    if (( ! GPU_CURVE_CUSTOM )); then
+        GPU_CT=("${CT[@]}")
+        GPU_CP=("${CP[@]}")
+    fi
     if (( SILENT_OFF_BELOW > 0 )); then
         SILENT_OFF_BELOW_MC=$(( SILENT_OFF_BELOW * 1000 ))
         GPU_SILENT_OFF_BELOW_MC=$SILENT_OFF_BELOW_MC
     else
-        SILENT_OFF_BELOW_MC=${CT[${#CT[@]}-2]}
-        GPU_SILENT_OFF_BELOW_MC=${GPU_CT[${#GPU_CT[@]}-2]}
+        SILENT_OFF_BELOW_MC=${CT[1]}
+        GPU_SILENT_OFF_BELOW_MC=${GPU_CT[1]}
     fi
 }
 
@@ -387,16 +410,44 @@ next_pwm() {
     fi
 }
 
+update_desired_pwm() {
+    local target=$1 effective_temp=$2
+    if (( target > desired_pwm )); then
+        desired_pwm=$target
+        last_up_temp=$effective_temp
+    elif (( target < desired_pwm && effective_temp <= last_up_temp - HYST_MC )); then
+        desired_pwm=$target
+    fi
+}
+
+iteration_done() {
+    (( LOOP_LIMIT > 0 )) || return 1
+    (( ++loop_count >= LOOP_LIMIT ))
+}
+
+check_config() {
+    [[ -f "$CONF" ]] || { echo "error: config not found: $CONF" >&2; return 1; }
+    set_defaults
+    if ! conf_safe || ! parse_conf || ! normalize_conf; then
+        echo "error: invalid configuration: $CONF" >&2
+        return 1
+    fi
+    echo "configuration valid: $CONF"
+}
+
 main() {
+(( CHECK_CONF )) && { check_config; return; }
+acquire_lock || exit 1
 HP_HWMON=$(find_hwmon)
 CPU_TEMP=$(find_cpu_temp)
-GPU_TEMP=$(find_gpu_temp)
+mapfile -t GPU_TEMPS < <(find_gpu_temps)
 
 [[ -d "$HP_HWMON" ]] || { echo "hp-wmi hwmon not found" >&2; exit 1; }
 if (( ! DRY_RUN )); then
     [[ -w "$HP_HWMON/pwm1" && -w "$HP_HWMON/pwm1_enable" ]] || { echo "hp-wmi PWM interface missing or not writable" >&2; exit 1; }
 fi
 [[ -f "$CPU_TEMP" ]] || { echo "cpu temp sensor not found (tried coretemp, k10temp, zenpower)" >&2; exit 1; }
+mapfile -t FAN_INPUTS < <(find_fan_inputs)
 
 load_conf
 
@@ -414,12 +465,13 @@ else
 fi
 last_up_temp=999999
 cur_pwm_hw=$(cat "$HP_HWMON/pwm1" 2>/dev/null)
-[[ "$cur_pwm_hw" =~ ^[0-9]+$ ]] && cur_pwm=$cur_pwm_hw || cur_pwm=255
-if (( ! DRY_RUN )) && ! echo 1 > "$HP_HWMON/pwm1_enable" 2>/dev/null; then
-    echo "error: failed to enable manual fan control" >&2
-    exit 1
+if [[ "$cur_pwm_hw" =~ ^[0-9]+$ ]] && (( cur_pwm_hw >= 0 && cur_pwm_hw <= 255 )); then
+    cur_pwm=$cur_pwm_hw
+else
+    cur_pwm=255
 fi
-apply "$cur_pwm" "${cpu_temp_init:-0}" "0" || { cleanup; return 1; }
+set_manual_control || exit 1
+apply "$cur_pwm" "${cpu_temp_init:-0}" "0" || cleanup
 echo "info: started — cpu=$(( ${cpu_temp_init:-0} / 1000 ))°C pwm=$cur_pwm" >&2
 
 last_profile=""
