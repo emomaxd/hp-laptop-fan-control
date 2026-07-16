@@ -511,7 +511,7 @@ while true; do
     if (( ! SKIP_SLEEP )); then
         sleep "$POLL_SEC" & wait $!
     fi
-    notify_systemd --watchdog
+    notify_systemd WATCHDOG=1
 
     if (( FOLLOW_PLATFORM_PROFILE )) && [[ -f "$SYSFS_ROOT/firmware/acpi/platform_profile" ]]; then
         prof=$(<"$SYSFS_ROOT/firmware/acpi/platform_profile")
