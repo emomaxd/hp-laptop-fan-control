@@ -22,6 +22,8 @@ if [[ -f /etc/hpfand.conf ]]; then
 fi
 rm -rf /var/lib/hpfand
 udevadm control --reload-rules
-id -u hpfand >/dev/null 2>&1 && userdel hpfand || true
+if id -u hpfand >/dev/null 2>&1; then
+    userdel hpfand || true
+fi
 systemctl daemon-reload
 echo "uninstalled"

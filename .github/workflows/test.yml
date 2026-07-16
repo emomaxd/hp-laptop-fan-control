@@ -11,7 +11,7 @@ jobs:
   shell:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check syntax
         run: bash -n hpfand hpf install.sh update.sh uninstall.sh tests/test_hpfand.sh
       - name: ShellCheck

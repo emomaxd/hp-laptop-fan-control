@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.5.1] - 2026-07-16
+
+- Fix CI compatibility with the ShellCheck version on GitHub-hosted runners.
+
 ## [2.5.0] - 2026-07-16
 
 - Add immediate CPU/GPU emergency-temperature override and persistent fan-stall fail-safe.
