@@ -1,7 +1,11 @@
 #!/bin/bash
+set -euo pipefail
 
 CONF=/etc/hpfand.conf
 SILENT_FLAG=/var/lib/hpfand/silent
+SYSFS_ROOT=${SYSFS_ROOT:-/sys}
+SYSTEMCTL=${SYSTEMCTL:-systemctl}
+HPFAND_BIN=${HPFAND_BIN:-hpfand}
 
 usage() {
     cat <<EOF
@@ -24,29 +28,31 @@ need_root() { [[ $EUID -eq 0 ]] || { echo "error: requires root"; exit 1; }; }
 
 find_hwmon() {
     local f dir
-    for f in /sys/class/hwmon/*/name; do
+    for f in "$SYSFS_ROOT"/class/hwmon/*/name; do
         [[ -f "$f" && "$(<"$f")" == hp ]] || continue
         dir=$(dirname "$f")
         [[ -e "$dir/pwm1" && -e "$dir/pwm1_enable" ]] && echo "$dir" && return
     done
 }
 
-find_gpu_temp() {
-    local f name dir
-    for f in /sys/class/hwmon/*/name; do
+find_gpu_temps() {
+    local f temp_file name dir
+    for f in "$SYSFS_ROOT"/class/hwmon/*/name; do
         [[ -f "$f" ]] || continue
         name=$(<"$f")
         dir=$(dirname "$f")
         case "$name" in
             nvidia|amdgpu|radeon)
-                [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return ;;
+                for temp_file in "$dir"/temp*_input; do
+                    [[ -f "$temp_file" ]] && echo "$temp_file"
+                done ;;
         esac
     done
 }
 
 find_cpu_temp() {
     local dir f lf
-    for dir in /sys/devices/platform/coretemp.*/hwmon/hwmon*; do
+    for dir in "$SYSFS_ROOT"/devices/platform/coretemp.*/hwmon/hwmon*; do
         [[ -d "$dir" ]] || continue
         for lf in "$dir"/temp*_label; do
             [[ -f "$lf" ]] || continue
@@ -55,7 +61,7 @@ find_cpu_temp() {
         [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return
     done
     local name
-    for f in /sys/class/hwmon/*/name; do
+    for f in "$SYSFS_ROOT"/class/hwmon/*/name; do
         [[ -f "$f" ]] || continue
         name=$(<"$f")
         [[ "$name" == "k10temp" || "$name" == "zenpower" ]] || continue
@@ -68,21 +74,63 @@ find_cpu_temp() {
     done
 }
 
+read_max_temp() {
+    local path value max=0
+    for path in "$@"; do
+        value=$(cat "$path" 2>/dev/null) || continue
+        [[ "$value" =~ ^[0-9]+$ ]] || continue
+        (( value > 0 && value <= 150000 && value > max )) && max=$value
+    done
+    echo "$max"
+}
+
+find_fan_inputs() {
+    local hwmon=$1 f
+    for f in "$hwmon"/fan*_input; do
+        [[ -f "$f" ]] && echo "$f"
+    done
+}
+
+write_config() {
+    local tmp
+    tmp=$(mktemp "${CONF}.tmp.XXXXXX") || return 1
+    if ! cat > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    if chown root:root "$tmp" && chmod 0644 "$tmp" && mv -f "$tmp" "$CONF"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    return 1
+}
+
+restore_firmware() {
+    local hwmon=$1 mode
+    if ! echo 2 > "$hwmon/pwm1_enable" 2>/dev/null \
+        || ! mode=$(cat "$hwmon/pwm1_enable" 2>/dev/null) \
+        || [[ "$mode" != "2" ]]; then
+        echo "error: failed to restore firmware control" >&2
+        return 1
+    fi
+}
+
 print_status() {
-    local HP_HWMON CPU_TEMP GPU_TEMP_PATH
+    local HP_HWMON CPU_TEMP gpu_mc fan_path fan_rpm fan_name
+    local -a GPU_TEMP_PATHS FAN_INPUT_PATHS
     HP_HWMON=$(find_hwmon)
     CPU_TEMP=$(find_cpu_temp)
-    GPU_TEMP_PATH=$(find_gpu_temp)
+    mapfile -t GPU_TEMP_PATHS < <(find_gpu_temps)
+    [[ -d "$HP_HWMON" ]] || { echo "error: supported hp-wmi PWM interface not found" >&2; return 1; }
+    mapfile -t FAN_INPUT_PATHS < <(find_fan_inputs "$HP_HWMON")
 
     local preset="custom"
     [[ -f "$CONF" ]] && grep -q "^# preset:" "$CONF" && preset=$(grep "^# preset:" "$CONF" | cut -d' ' -f3)
     [[ -f "$CONF" ]] && grep -q "^FOLLOW_PLATFORM_PROFILE=1" "$CONF" && preset="auto (follow profile)"
     [[ -f "$SILENT_FLAG" ]] && preset+=" [silent]"
 
-    local cpu_mc fan1 fan2 pwm mode
+    local cpu_mc pwm mode
     cpu_mc=$(cat "$CPU_TEMP" 2>/dev/null); cpu_mc=${cpu_mc:-0}
-    fan1=$(cat "$HP_HWMON/fan1_input" 2>/dev/null); fan1=${fan1:-0}
-    fan2=$(cat "$HP_HWMON/fan2_input" 2>/dev/null); fan2=${fan2:-0}
     pwm=$(cat "$HP_HWMON/pwm1" 2>/dev/null); pwm=${pwm:-0}
     mode=$(cat "$HP_HWMON/pwm1_enable" 2>/dev/null); mode=${mode:-0}
     [[ $mode -eq 1 ]] && mode="manual (daemon active)" || mode="auto"
@@ -90,29 +138,31 @@ print_status() {
     printf "preset:  %s\n" "$preset"
     printf "mode:    %s\n" "$mode"
 
-    if [[ -f /sys/firmware/acpi/platform_profile ]]; then
-        printf "profile: %s\n" "$(<"/sys/firmware/acpi/platform_profile")"
+    if [[ -f "$SYSFS_ROOT/firmware/acpi/platform_profile" ]]; then
+        printf "profile: %s\n" "$(<"$SYSFS_ROOT/firmware/acpi/platform_profile")"
     fi
 
     echo   "---"
     printf "cpu:     %d°C\n" "$(( cpu_mc / 1000 ))"
 
-    if [[ -n "$GPU_TEMP_PATH" && -f "$GPU_TEMP_PATH" ]]; then
-        local gpu_mc
-        gpu_mc=$(cat "$GPU_TEMP_PATH" 2>/dev/null); gpu_mc=${gpu_mc:-0}
+    gpu_mc=$(read_max_temp "${GPU_TEMP_PATHS[@]}")
+    if (( gpu_mc > 0 )); then
         printf "gpu:     %d°C\n" "$(( gpu_mc / 1000 ))"
     fi
 
-    printf "fan1:    %d rpm\n" "$fan1"
-    printf "fan2:    %d rpm\n" "$fan2"
+    for fan_path in "${FAN_INPUT_PATHS[@]}"; do
+        fan_rpm=$(cat "$fan_path" 2>/dev/null); fan_rpm=${fan_rpm:-0}
+        fan_name=$(basename "$fan_path" _input)
+        printf "%-8s %d rpm\n" "$fan_name:" "$fan_rpm"
+    done
     printf "pwm:     %d/255\n" "$pwm"
 }
 
 cmd_status() {
     local watch=0 interval=2
-    if [[ "$1" == "-w" ]]; then
+    if [[ "${1:-}" == "-w" ]]; then
         watch=1
-        [[ "$2" =~ ^[0-9]+$ ]] && interval=$2
+        [[ "${2:-}" =~ ^[0-9]+$ ]] && (( $2 > 0 )) && interval=$2
     fi
 
     if (( watch )); then
@@ -128,7 +178,7 @@ cmd_status() {
 
 cmd_set() {
     need_root
-    local name=$1
+    local name=${1:-}
     [[ -z "$name" ]] && { echo "usage: hpf set <preset>"; echo "run 'hpf presets' to list options"; exit 1; }
     local ct cp hyst poll
 
