@@ -140,6 +140,20 @@ fi
 chmod 0600 "$HP/pwm1"
 apply 90 50000 0
 check 90 "$(<"$HP/pwm1")" "daemon PWM write succeeds on retry"
+check 90 "$APPLIED_PWM" "daemon records the applied PWM value"
+
+if pwm_readback_valid 154 149; then
+    echo "ok - hardware PWM quantization is accepted"
+else
+    echo "not ok - hardware PWM quantization is accepted" >&2
+    failures=$(( failures + 1 ))
+fi
+if pwm_readback_valid 154 100; then
+    echo "not ok - large PWM readback mismatch is rejected" >&2
+    failures=$(( failures + 1 ))
+else
+    echo "ok - large PWM readback mismatch is rejected"
+fi
 
 run_daemon() {
     local loops=$1 log=$2

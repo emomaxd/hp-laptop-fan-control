@@ -6,6 +6,7 @@ SILENT_FLAG=/var/lib/hpfand/silent
 SYSFS_ROOT=${SYSFS_ROOT:-/sys}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
 HPFAND_BIN=${HPFAND_BIN:-hpfand}
+LOCKED_PWM=0
 
 usage() {
     cat <<EOF
@@ -114,6 +115,14 @@ restore_firmware() {
         echo "error: failed to restore firmware control" >&2
         return 1
     fi
+}
+
+pwm_readback_valid() {
+    local requested=$1 actual=$2 delta
+    [[ "$actual" =~ ^[0-9]+$ ]] || return 1
+    (( actual >= 0 && actual <= 255 )) || return 1
+    delta=$(( actual > requested ? actual - requested : requested - actual ))
+    (( delta <= 16 ))
 }
 
 print_status() {
@@ -317,15 +326,18 @@ lock_pwm() {
         return 1
     fi
 
+    local actual
     if ! echo 1 > "$HP_HWMON/pwm1_enable" 2>/dev/null \
         || [[ "$(cat "$HP_HWMON/pwm1_enable" 2>/dev/null)" != "1" ]] \
         || ! echo "$val" > "$HP_HWMON/pwm1" 2>/dev/null \
-        || [[ "$(cat "$HP_HWMON/pwm1" 2>/dev/null)" != "$val" ]]; then
+        || ! actual=$(cat "$HP_HWMON/pwm1" 2>/dev/null) \
+        || ! pwm_readback_valid "$val" "$actual"; then
         echo "error: failed to lock PWM; restoring firmware control" >&2
         restore_firmware "$HP_HWMON"
         (( was_active )) && "$SYSTEMCTL" start hpfand 2>/dev/null
         return 1
     fi
+    LOCKED_PWM=$actual
 }
 
 cmd_pwm() {
@@ -341,7 +353,7 @@ cmd_pwm() {
     HP_HWMON=$(find_hwmon)
     [[ -d "$HP_HWMON" ]] || { echo "error: hp hwmon not found"; exit 1; }
     lock_pwm "$HP_HWMON" "$val" || exit 1
-    echo "pwm locked: $val/255 (daemon stopped)"
+    echo "pwm locked: $LOCKED_PWM/255 (requested $val, daemon stopped)"
     echo "warning: no thermal protection — run 'hpf set <preset>' to restore"
 }
 

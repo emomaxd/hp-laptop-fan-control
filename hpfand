@@ -21,6 +21,7 @@ SILENT_OFF_BELOW=0; SILENT_OFF_BELOW_MC=0; GPU_SILENT_OFF_BELOW_MC=0
 EMERGENCY_TEMP=95; EMERGENCY_TEMP_MC=95000
 GPU_TEMPS=(); FAN_INPUTS=()
 GPU_CURVE_CUSTOM=0; CONFIG_LOADED=0
+APPLIED_PWM=0
 LOOP_LIMIT=${HPFAND_TEST_LOOPS:-0}
 SKIP_SLEEP=${HPFAND_TEST_NO_SLEEP:-0}
 LOCK_FILE=${LOCK_FILE:-/run/hpfand/daemon.lock}
@@ -312,9 +313,18 @@ profile_to_curves() {
     fi
 }
 
+pwm_readback_valid() {
+    local requested=$1 actual=$2 delta
+    [[ "$actual" =~ ^[0-9]+$ ]] || return 1
+    (( actual >= 0 && actual <= 255 )) || return 1
+    delta=$(( actual > requested ? actual - requested : requested - actual ))
+    (( delta <= 16 ))
+}
+
 apply() {
     if (( DRY_RUN )); then
         echo "dry-run: pwm=$1 (cpu=${2}mc gpu=${3}mc)" >&2
+        APPLIED_PWM=$1
         return 0
     fi
     if ! echo "$1" > "$HP_HWMON/pwm1" 2>/dev/null; then
@@ -322,10 +332,12 @@ apply() {
         return 1
     fi
     local actual
-    if ! actual=$(cat "$HP_HWMON/pwm1" 2>/dev/null) || [[ "$actual" != "$1" ]]; then
+    if ! actual=$(cat "$HP_HWMON/pwm1" 2>/dev/null) \
+        || ! pwm_readback_valid "$1" "$actual"; then
         echo "error: PWM write was not accepted (requested=$1 actual=${actual:-unreadable})" >&2
         return 1
     fi
+    APPLIED_PWM=$actual
 }
 
 set_manual_control() {
@@ -478,6 +490,7 @@ else
 fi
 set_manual_control || exit 1
 apply "$cur_pwm" "${cpu_temp_init:-0}" "0" || cleanup
+cur_pwm=$APPLIED_PWM
 echo "info: started — cpu=$(( ${cpu_temp_init:-0} / 1000 ))°C pwm=$cur_pwm" >&2
 notify_systemd --ready
 
@@ -515,7 +528,7 @@ while true; do
         (( ++sensor_miss ))
         if (( sensor_miss >= 3 )); then
             if apply 255 0 0; then
-                cur_pwm=255; prev_pwm=255; desired_pwm=255
+                cur_pwm=$APPLIED_PWM; prev_pwm=255; desired_pwm=255
                 last_up_temp=999999
             fi
             (( sensor_miss == 3 )) && echo "warning: cpu temp unreadable — fan at full speed" >&2
@@ -527,7 +540,7 @@ while true; do
 
     if (( cpu_temp >= EMERGENCY_TEMP_MC )); then
         if apply 255 "$cpu_temp" 0; then
-            cur_pwm=255; prev_pwm=255; desired_pwm=255
+            cur_pwm=$APPLIED_PWM; prev_pwm=255; desired_pwm=255
             last_up_temp=$cpu_temp
         fi
         (( emergency_active )) || echo "warning: emergency CPU temperature — fan at full speed (${cpu_temp}mc)" >&2
@@ -566,7 +579,7 @@ while true; do
 
     if (( gpu_temp >= EMERGENCY_TEMP_MC )); then
         if apply 255 "$cpu_temp" "$gpu_temp"; then
-            cur_pwm=255; prev_pwm=255; desired_pwm=255
+            cur_pwm=$APPLIED_PWM; prev_pwm=255; desired_pwm=255
             last_up_temp=$gpu_temp
         fi
         (( emergency_active )) || echo "warning: emergency GPU temperature — fan at full speed (${gpu_temp}mc)" >&2
@@ -601,7 +614,7 @@ while true; do
 
     if (( candidate_pwm != prev_pwm )); then
         if apply "$candidate_pwm" "$ema_cpu" "$ema_gpu"; then
-            cur_pwm=$candidate_pwm
+            cur_pwm=$APPLIED_PWM
             prev_pwm=$candidate_pwm
         fi
     fi
@@ -626,7 +639,7 @@ while true; do
                 (( log_stall )) && stall_last_log=$EPOCHSECONDS
                 stall_active=1
                 if apply 255 "$ema_cpu" "$ema_gpu"; then
-                    cur_pwm=255; prev_pwm=255; desired_pwm=255
+                    cur_pwm=$APPLIED_PWM; prev_pwm=255; desired_pwm=255
                     last_up_temp=999999
                 fi
             elif (( stall_active )); then
