@@ -13,7 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check syntax
-        run: bash -n hpfand hpf install.sh update.sh uninstall.sh build-module.sh tests/test_hpfand.sh
+        run: bash -n hpfand hpf install.sh update.sh uninstall.sh tests/test_hpfand.sh
+      - name: ShellCheck
+        run: shellcheck -x -e SC1090 hpfand hpf install.sh update.sh uninstall.sh tests/test_hpfand.sh
       - name: Run regression tests
         run: tests/test_hpfand.sh
       - name: Check whitespace
