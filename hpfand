@@ -2,17 +2,29 @@
 
 CONF=${CONF:-/etc/hpfand.conf}
 SILENT_FLAG=${SILENT_FLAG:-/var/lib/hpfand/silent}
+SYSFS_ROOT=${SYSFS_ROOT:-/sys}
 DRY_RUN=0
+CHECK_CONF=0
 MAINPID=$$
 INOTIFY_PID=
 
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
+case "${1:-}" in
+    --dry-run) DRY_RUN=1 ;;
+    --check-config) CHECK_CONF=1; CONF=${2:-$CONF} ;;
+esac
 
 CT=() CP=() GPU_CT=() GPU_CP=()
 HYST=6; POLL_SEC=2; HYST_MC=6000
 FOLLOW_PLATFORM_PROFILE=0; RPM_STALL_WARN=1
 SLEW_UP=100; SLEW_DOWN=20; MIN_PWM=0
 SILENT_OFF_BELOW=0; SILENT_OFF_BELOW_MC=0; GPU_SILENT_OFF_BELOW_MC=0
+EMERGENCY_TEMP=95; EMERGENCY_TEMP_MC=95000
+GPU_TEMPS=(); FAN_INPUTS=()
+GPU_CURVE_CUSTOM=0; CONFIG_LOADED=0
+LOOP_LIMIT=${HPFAND_TEST_LOOPS:-0}
+SKIP_SLEEP=${HPFAND_TEST_NO_SLEEP:-0}
+LOCK_FILE=${LOCK_FILE:-/run/hpfand/daemon.lock}
+LOCK_FD=
 
 set_defaults() {
     CT=(40 50 60 72 82); CP=(0 30 80 170 255)
@@ -20,6 +32,7 @@ set_defaults() {
     HYST=6; POLL_SEC=2
     FOLLOW_PLATFORM_PROFILE=0; RPM_STALL_WARN=1
     SLEW_UP=100; SLEW_DOWN=20; MIN_PWM=0; SILENT_OFF_BELOW=0
+    EMERGENCY_TEMP=95
 }
 
 conf_safe() {
@@ -54,11 +67,11 @@ validate_curve() {
     (( n >= 2 && ${#_cp[@]} == n )) || return 1
     for (( i=0; i < n-1; i++ )); do
         if (( _ct[i] >= _ct[i+1] )); then
-            echo "warning: $label CT not strictly increasing at index $i — using defaults" >&2
+            echo "warning: $label CT not strictly increasing at index $i" >&2
             return 1
         fi
         if (( _cp[i] > _cp[i+1] )); then
-            echo "warning: $label CP not non-decreasing at index $i — using defaults" >&2
+            echo "warning: $label CP not non-decreasing at index $i" >&2
             return 1
         fi
     done
@@ -66,7 +79,7 @@ validate_curve() {
         [[ "${_ct[i]}" =~ ^[0-9]+$ && "${_cp[i]}" =~ ^-?[0-9]+$ ]] || return 1
         (( _ct[i] <= 150 )) || return 1
         if (( _cp[i] < 0 || _cp[i] > 255 )); then
-            echo "warning: $label CP[$i]=${_cp[i]} out of range [0,255] — using defaults" >&2
+            echo "warning: $label CP[$i]=${_cp[i]} out of range [0,255]" >&2
             return 1
         fi
     done
@@ -93,7 +106,7 @@ parse_conf() {
                 CT) CT=("${normalized[@]}") ;; CP) CP=("${normalized[@]}") ;;
                 GPU_CT) GPU_CT=("${normalized[@]}") ;; GPU_CP) GPU_CP=("${normalized[@]}") ;;
             esac
-        elif [[ "$line" =~ ^(HYST|POLL_SEC|FOLLOW_PLATFORM_PROFILE|RPM_STALL_WARN|SLEW_UP|SLEW_DOWN|MIN_PWM|SILENT_OFF_BELOW)=(-?[0-9]+)$ ]]; then
+        elif [[ "$line" =~ ^(HYST|POLL_SEC|FOLLOW_PLATFORM_PROFILE|RPM_STALL_WARN|SLEW_UP|SLEW_DOWN|MIN_PWM|SILENT_OFF_BELOW|EMERGENCY_TEMP)=(-?[0-9]+)$ ]]; then
             key=${BASH_REMATCH[1]}; value=${BASH_REMATCH[2]}
             if [[ "$value" == -* ]]; then value="-$(( 10#${value#-} ))"; else value=$(( 10#$value )); fi
             printf -v "$key" '%s' "$value"
@@ -104,84 +117,121 @@ parse_conf() {
     done < "$CONF"
 }
 
-load_conf() {
-    set_defaults
-
-    if [[ -f "$CONF" ]]; then
-        if conf_safe; then
-            if ! parse_conf; then
-                echo "warning: failed to parse $CONF, using defaults" >&2
-                set_defaults
-            fi
-        fi
-    fi
-
+normalize_conf() {
     if (( ${#CT[@]} < 2 || ${#CP[@]} != ${#CT[@]} )); then
-        echo "warning: CT/CP array mismatch in $CONF, using defaults" >&2
-        CT=(40 50 60 72 82)
-        CP=(0  30 80 170 255)
+        echo "warning: CT/CP array mismatch in $CONF" >&2
+        return 1
     fi
-    validate_curve CPU CT CP || { CT=(40 50 60 72 82); CP=(0 30 80 170 255); }
+    validate_curve CPU CT CP || return 1
 
-    (( HYST >= 0 && HYST <= 30 )) || HYST=6
-    (( POLL_SEC >= 1 && POLL_SEC <= 60 )) || POLL_SEC=2
-    (( FOLLOW_PLATFORM_PROFILE == 0 || FOLLOW_PLATFORM_PROFILE == 1 )) || FOLLOW_PLATFORM_PROFILE=0
-    (( RPM_STALL_WARN == 0 || RPM_STALL_WARN == 1 )) || RPM_STALL_WARN=1
-    (( SLEW_UP >= 1 && SLEW_UP <= 255 )) || SLEW_UP=100
-    (( SLEW_DOWN >= 1 && SLEW_DOWN <= 255 )) || SLEW_DOWN=20
-    (( SILENT_OFF_BELOW >= 0 && SILENT_OFF_BELOW <= 120 )) || SILENT_OFF_BELOW=0
+    (( HYST >= 0 && HYST <= 30 )) || { echo "warning: HYST must be 0-30" >&2; return 1; }
+    (( POLL_SEC >= 1 && POLL_SEC <= 60 )) || { echo "warning: POLL_SEC must be 1-60" >&2; return 1; }
+    (( FOLLOW_PLATFORM_PROFILE == 0 || FOLLOW_PLATFORM_PROFILE == 1 )) || { echo "warning: FOLLOW_PLATFORM_PROFILE must be 0 or 1" >&2; return 1; }
+    (( RPM_STALL_WARN == 0 || RPM_STALL_WARN == 1 )) || { echo "warning: RPM_STALL_WARN must be 0 or 1" >&2; return 1; }
+    (( SLEW_UP >= 1 && SLEW_UP <= 255 )) || { echo "warning: SLEW_UP must be 1-255" >&2; return 1; }
+    (( SLEW_DOWN >= 1 && SLEW_DOWN <= 255 )) || { echo "warning: SLEW_DOWN must be 1-255" >&2; return 1; }
+    (( MIN_PWM >= 0 && MIN_PWM <= 255 )) || { echo "warning: MIN_PWM must be 0-255" >&2; return 1; }
+    (( SILENT_OFF_BELOW >= 0 && SILENT_OFF_BELOW <= 100 )) || { echo "warning: SILENT_OFF_BELOW must be 0-100" >&2; return 1; }
+    (( EMERGENCY_TEMP >= 70 && EMERGENCY_TEMP <= 100 )) || { echo "warning: EMERGENCY_TEMP must be 70-100" >&2; return 1; }
 
-    for i in "${!CT[@]}"; do CT[$i]=$(( CT[i] * 1000 )); done
+    for i in "${!CT[@]}"; do CT[i]=$(( CT[i] * 1000 )); done
     HYST_MC=$(( HYST * 1000 ))
-    (( MIN_PWM >= 0 && MIN_PWM <= 255 )) || MIN_PWM=0
+    EMERGENCY_TEMP_MC=$(( EMERGENCY_TEMP * 1000 ))
     if (( SILENT_OFF_BELOW > 0 )); then
         SILENT_OFF_BELOW_MC=$(( SILENT_OFF_BELOW * 1000 ))
     else
-        SILENT_OFF_BELOW_MC=${CT[${#CT[@]}-2]}
+        SILENT_OFF_BELOW_MC=${CT[1]}
     fi
 
+    GPU_CURVE_CUSTOM=0
     if (( ${#GPU_CT[@]} == 0 )); then
+        (( ${#GPU_CP[@]} == 0 )) || { echo "warning: GPU_CP requires GPU_CT" >&2; return 1; }
         GPU_CT=("${CT[@]}")
         GPU_CP=("${CP[@]}")
     else
         if (( ${#GPU_CP[@]} != ${#GPU_CT[@]} )); then
-            echo "warning: GPU_CT/GPU_CP array mismatch in $CONF, ignoring GPU overrides" >&2
-            GPU_CT=("${CT[@]}")
-            GPU_CP=("${CP[@]}")
+            echo "warning: GPU_CT/GPU_CP array mismatch in $CONF" >&2
+            return 1
         else
             if validate_curve GPU GPU_CT GPU_CP; then
-                for i in "${!GPU_CT[@]}"; do GPU_CT[$i]=$(( GPU_CT[i] * 1000 )); done
+                for i in "${!GPU_CT[@]}"; do GPU_CT[i]=$(( GPU_CT[i] * 1000 )); done
+                GPU_CURVE_CUSTOM=1
             else
-                GPU_CT=("${CT[@]}")
-                GPU_CP=("${CP[@]}")
+                return 1
             fi
         fi
     fi
     if (( SILENT_OFF_BELOW > 0 )); then
         GPU_SILENT_OFF_BELOW_MC=$SILENT_OFF_BELOW_MC
     else
-        GPU_SILENT_OFF_BELOW_MC=${GPU_CT[${#GPU_CT[@]}-2]}
+        GPU_SILENT_OFF_BELOW_MC=${GPU_CT[1]}
     fi
+}
+
+load_conf() {
+    local -a old_CT=("${CT[@]}") old_CP=("${CP[@]}")
+    local -a old_GPU_CT=("${GPU_CT[@]}") old_GPU_CP=("${GPU_CP[@]}")
+    local old_HYST=$HYST old_POLL_SEC=$POLL_SEC old_HYST_MC=$HYST_MC
+    local old_FOLLOW=$FOLLOW_PLATFORM_PROFILE old_RPM=$RPM_STALL_WARN
+    local old_SLEW_UP=$SLEW_UP old_SLEW_DOWN=$SLEW_DOWN old_MIN_PWM=$MIN_PWM
+    local old_SILENT=$SILENT_OFF_BELOW old_SILENT_MC=$SILENT_OFF_BELOW_MC
+    local old_GPU_SILENT_MC=$GPU_SILENT_OFF_BELOW_MC old_EMERGENCY=$EMERGENCY_TEMP
+    local old_EMERGENCY_MC=$EMERGENCY_TEMP_MC old_GPU_CUSTOM=$GPU_CURVE_CUSTOM
+    local valid=1
+
+    set_defaults
+    if [[ -f "$CONF" ]]; then
+        conf_safe || valid=0
+        (( ! valid )) || parse_conf || { echo "warning: failed to parse $CONF" >&2; valid=0; }
+    fi
+    (( ! valid )) || normalize_conf || valid=0
+
+    if (( valid )); then
+        CONFIG_LOADED=1
+        return 0
+    fi
+
+    if (( CONFIG_LOADED )); then
+        CT=("${old_CT[@]}"); CP=("${old_CP[@]}")
+        GPU_CT=("${old_GPU_CT[@]}"); GPU_CP=("${old_GPU_CP[@]}")
+        HYST=$old_HYST; POLL_SEC=$old_POLL_SEC; HYST_MC=$old_HYST_MC
+        FOLLOW_PLATFORM_PROFILE=$old_FOLLOW; RPM_STALL_WARN=$old_RPM
+        SLEW_UP=$old_SLEW_UP; SLEW_DOWN=$old_SLEW_DOWN; MIN_PWM=$old_MIN_PWM
+        SILENT_OFF_BELOW=$old_SILENT; SILENT_OFF_BELOW_MC=$old_SILENT_MC
+        GPU_SILENT_OFF_BELOW_MC=$old_GPU_SILENT_MC
+        EMERGENCY_TEMP=$old_EMERGENCY; EMERGENCY_TEMP_MC=$old_EMERGENCY_MC
+        GPU_CURVE_CUSTOM=$old_GPU_CUSTOM
+        echo "warning: keeping last-known-good configuration" >&2
+        return 1
+    fi
+
+    echo "warning: using built-in defaults" >&2
+    set_defaults
+    normalize_conf
+    CONFIG_LOADED=1
+    return 1
 }
 
 find_hwmon() {
     local f dir
-    for f in /sys/class/hwmon/*/name; do
+    for f in "$SYSFS_ROOT"/class/hwmon/*/name; do
         [[ -f "$f" && "$(<"$f")" == hp ]] || continue
         dir=$(dirname "$f")
         [[ -e "$dir/pwm1" && -e "$dir/pwm1_enable" ]] && echo "$dir" && return
     done
 }
 
-find_gpu_temp() {
-    local f name dir
-    for f in /sys/class/hwmon/*/name; do
+find_gpu_temps() {
+    local f temp_file name dir
+    for f in "$SYSFS_ROOT"/class/hwmon/*/name; do
         [[ -f "$f" ]] || continue
         name=$(<"$f")
         dir=$(dirname "$f")
         case "$name" in
             nvidia|amdgpu|radeon)
-                [[ -f "$dir/temp1_input" ]] && echo "$dir/temp1_input" && return ;;
+                for temp_file in "$dir"/temp*_input; do
+                    [[ -f "$temp_file" ]] && echo "$temp_file"
+                done ;;
         esac
     done
 }
@@ -189,7 +239,7 @@ find_gpu_temp() {
 find_cpu_temp() {
     local dir f lf
     # Intel coretemp: prefer "Package id 0" label over temp1 which may be a single core
-    for dir in /sys/devices/platform/coretemp.*/hwmon/hwmon*; do
+    for dir in "$SYSFS_ROOT"/devices/platform/coretemp.*/hwmon/hwmon*; do
         [[ -d "$dir" ]] || continue
         for lf in "$dir"/temp*_label; do
             [[ -f "$lf" ]] || continue
