@@ -308,31 +308,58 @@ performance  fans on at 35°C, max at 78°C    — gaming, compiling  (poll 1s)
 EOF
 }
 
+lock_pwm() {
+    local HP_HWMON=$1 val=$2
+    local was_active=0
+    "$SYSTEMCTL" is-active --quiet hpfand && was_active=1
+    if (( was_active )) && ! "$SYSTEMCTL" stop hpfand; then
+        echo "error: failed to stop hpfand; PWM was not changed" >&2
+        return 1
+    fi
+
+    if ! echo 1 > "$HP_HWMON/pwm1_enable" 2>/dev/null \
+        || [[ "$(cat "$HP_HWMON/pwm1_enable" 2>/dev/null)" != "1" ]] \
+        || ! echo "$val" > "$HP_HWMON/pwm1" 2>/dev/null \
+        || [[ "$(cat "$HP_HWMON/pwm1" 2>/dev/null)" != "$val" ]]; then
+        echo "error: failed to lock PWM; restoring firmware control" >&2
+        restore_firmware "$HP_HWMON"
+        (( was_active )) && "$SYSTEMCTL" start hpfand 2>/dev/null
+        return 1
+    fi
+}
+
 cmd_pwm() {
     need_root
-    local val=$1
+    local val=${1:-}
     [[ -z "$val" ]] && { echo "usage: hpf pwm <0-255>"; exit 1; }
-    [[ "$val" =~ ^[0-9]+$ ]] && (( val <= 255 )) || { echo "error: value must be 0-255"; exit 1; }
+    if [[ ! "$val" =~ ^[0-9]+$ ]] || (( val > 255 )); then
+        echo "error: value must be 0-255"
+        exit 1
+    fi
 
     local HP_HWMON
     HP_HWMON=$(find_hwmon)
     [[ -d "$HP_HWMON" ]] || { echo "error: hp hwmon not found"; exit 1; }
-
-    systemctl stop hpfand 2>/dev/null
-    echo 1      > "$HP_HWMON/pwm1_enable"
-    echo "$val" > "$HP_HWMON/pwm1"
+    lock_pwm "$HP_HWMON" "$val" || exit 1
     echo "pwm locked: $val/255 (daemon stopped)"
     echo "warning: no thermal protection — run 'hpf set <preset>' to restore"
 }
 
-case "$1" in
-    status)   cmd_status "$2" "$3" ;;
-    set)      cmd_set "$2" ;;
+main() {
+case "${1:-}" in
+    status)   cmd_status "${2:-}" "${3:-}" ;;
+    set)      cmd_set "${2:-}" ;;
     follow)   cmd_follow ;;
-    pwm)      cmd_pwm "$2" ;;
+    pwm)      cmd_pwm "${2:-}" ;;
     toggle)   cmd_toggle ;;
-    log)      cmd_log "$2" ;;
+    log)      cmd_log "${2:-}" ;;
     edit)     cmd_edit ;;
+    check)    cmd_check ;;
     presets)  cmd_presets ;;
     *)        usage ;;
 esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
