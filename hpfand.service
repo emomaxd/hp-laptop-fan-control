@@ -1,22 +1,27 @@
 [Unit]
 Description=hpfand — HP Victus/Omen fan curve daemon
-After=systemd-modules-load.service
 
 [Service]
 Type=simple
+User=hpfand
+Group=hpfand
 ExecStart=HPFAND_BIN
 Restart=always
 RestartSec=3
 TimeoutStopSec=5
+UMask=0077
 StandardOutput=journal
 StandardError=journal
 StateDirectory=hpfand
 StateDirectoryMode=0770
-ExecStartPre=/bin/chgrp hpfand /var/lib/hpfand
-ExecStartPre=/bin/chmod 0770 /var/lib/hpfand
+RuntimeDirectory=hpfand
+RuntimeDirectoryMode=0750
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
+PrivateNetwork=yes
+ProtectProc=invisible
+ProcSubset=pid
 ProtectSystem=strict
 ProtectHome=yes
 ProtectControlGroups=yes
@@ -30,6 +35,11 @@ RestrictNamespaces=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
 
 [Install]
 WantedBy=multi-user.target

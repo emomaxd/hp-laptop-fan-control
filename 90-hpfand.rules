@@ -1,0 +1,1 @@
+ACTION=="add|change", SUBSYSTEM=="hwmon", ATTR{name}=="hp", RUN+="/bin/sh -c '/bin/chgrp hpfand %S%p/pwm1 %S%p/pwm1_enable && /bin/chmod 0660 %S%p/pwm1 %S%p/pwm1_enable'"
