@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.5.2] - 2026-07-16
+
+- Accept the PWM quantization performed by HP firmware while still rejecting
+  significant write/readback mismatches.
+- Send systemd watchdog heartbeats using the portable `WATCHDOG=1` notification.
+
 ## [2.5.1] - 2026-07-16
 
 - Fix CI compatibility with the ShellCheck version on GitHub-hosted runners.
