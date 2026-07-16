@@ -298,6 +298,54 @@ apply() {
         echo "error: failed to write pwm=$1" >&2
         return 1
     fi
+    local actual
+    if ! actual=$(cat "$HP_HWMON/pwm1" 2>/dev/null) || [[ "$actual" != "$1" ]]; then
+        echo "error: PWM write was not accepted (requested=$1 actual=${actual:-unreadable})" >&2
+        return 1
+    fi
+}
+
+set_manual_control() {
+    (( DRY_RUN )) && return 0
+    if ! echo 1 > "$HP_HWMON/pwm1_enable" 2>/dev/null; then
+        echo "error: failed to enable manual fan control" >&2
+        return 1
+    fi
+    local mode
+    if ! mode=$(cat "$HP_HWMON/pwm1_enable" 2>/dev/null) || [[ "$mode" != "1" ]]; then
+        echo "error: manual fan control request was not accepted (mode=${mode:-unreadable})" >&2
+        return 1
+    fi
+}
+
+set_firmware_control() {
+    (( DRY_RUN )) && return 0
+    if ! echo 2 > "$HP_HWMON/pwm1_enable" 2>/dev/null; then
+        echo "error: failed to return fan control to firmware" >&2
+        return 1
+    fi
+    local mode
+    if ! mode=$(cat "$HP_HWMON/pwm1_enable" 2>/dev/null); then
+        echo "error: could not verify firmware control mode" >&2
+        return 1
+    fi
+    if [[ "$mode" != "2" ]]; then
+        echo "error: firmware control request was not accepted (mode=$mode)" >&2
+        return 1
+    fi
+}
+
+acquire_lock() {
+    (( DRY_RUN )) && return 0
+    command -v flock >/dev/null 2>&1 || { echo "error: flock is required" >&2; return 1; }
+    if [[ ! -d "${LOCK_FILE%/*}" ]]; then
+        mkdir -p "${LOCK_FILE%/*}" 2>/dev/null || { echo "error: cannot create lock directory" >&2; return 1; }
+    fi
+    exec {LOCK_FD}> "$LOCK_FILE" || { echo "error: cannot open $LOCK_FILE" >&2; return 1; }
+    if ! flock -n "$LOCK_FD"; then
+        echo "error: another hpfand instance is already running" >&2
+        return 1
+    fi
 }
 
 start_inotify() {
@@ -320,10 +368,9 @@ on_reload() {
 
 cleanup() {
     [[ -n "$INOTIFY_PID" ]] && kill "$INOTIFY_PID" 2>/dev/null
-    if (( ! DRY_RUN )); then
-        [[ -d "$HP_HWMON" ]] && echo 2 > "$HP_HWMON/pwm1_enable"
-    fi
-    exit
+    local rc=0
+    [[ ! -d "$HP_HWMON" ]] || set_firmware_control || rc=1
+    exit "$rc"
 }
 
 next_pwm() {
