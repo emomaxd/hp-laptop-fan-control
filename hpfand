@@ -479,15 +479,21 @@ desired_pwm=$cur_pwm
 prev_pwm=$cur_pwm
 stall_cycles=0
 sensor_miss=0
+emergency_active=0
 ema_gpu=0
 gpu_miss=0
-startup_cycles=15
+startup_until=$(( EPOCHSECONDS + 30 ))
+stall_active=0
+stall_last_log=0
+loop_count=0
 
 while true; do
-    sleep "$POLL_SEC" & wait $!
+    if (( ! SKIP_SLEEP )); then
+        sleep "$POLL_SEC" & wait $!
+    fi
 
-    if (( FOLLOW_PLATFORM_PROFILE )) && [[ -f /sys/firmware/acpi/platform_profile ]]; then
-        prof=$(<"/sys/firmware/acpi/platform_profile")
+    if (( FOLLOW_PLATFORM_PROFILE )) && [[ -f "$SYSFS_ROOT/firmware/acpi/platform_profile" ]]; then
+        prof=$(<"$SYSFS_ROOT/firmware/acpi/platform_profile")
         if [[ "$prof" != "$last_profile" ]]; then
             profile_to_curves "$prof"
             last_profile=$prof
@@ -506,22 +512,39 @@ while true; do
             fi
             (( sensor_miss == 3 )) && echo "warning: cpu temp unreadable — fan at full speed" >&2
         fi
+        iteration_done && break
         continue
     fi
     sensor_miss=0
 
-    if (( startup_cycles > 0 )); then
+    if (( cpu_temp >= EMERGENCY_TEMP_MC )); then
+        if apply 255 "$cpu_temp" 0; then
+            cur_pwm=255; prev_pwm=255; desired_pwm=255
+            last_up_temp=$cpu_temp
+        fi
+        (( emergency_active )) || echo "warning: emergency CPU temperature — fan at full speed (${cpu_temp}mc)" >&2
+        emergency_active=1
+        iteration_done && break
+        continue
+    fi
+
+    if (( EPOCHSECONDS < startup_until )); then
         ema_cpu=$(( (8 * cpu_temp + 2 * ema_cpu) / 10 ))
     else
         ema_cpu=$(( (3 * cpu_temp + 7 * ema_cpu) / 10 ))
     fi
 
-    [[ -z "$GPU_TEMP" || ! -f "$GPU_TEMP" ]] && GPU_TEMP=$(find_gpu_temp)
-    gpu_temp=0
-    [[ -n "$GPU_TEMP" ]] && gpu_temp=$(cat "$GPU_TEMP" 2>/dev/null)
+    if (( ${#GPU_TEMPS[@]} == 0 )); then
+        mapfile -t GPU_TEMPS < <(find_gpu_temps)
+    fi
+    gpu_temp=$(read_max_temp "${GPU_TEMPS[@]}")
+    if (( gpu_temp == 0 )); then
+        mapfile -t GPU_TEMPS < <(find_gpu_temps)
+        gpu_temp=$(read_max_temp "${GPU_TEMPS[@]}")
+    fi
     if [[ "$gpu_temp" =~ ^[0-9]+$ ]] && (( gpu_temp > 0 && gpu_temp <= 150000 )); then
         gpu_miss=0
-        if (( startup_cycles > 0 )); then
+        if (( EPOCHSECONDS < startup_until )); then
             ema_gpu=$(( (8 * gpu_temp + 2 * ema_gpu) / 10 ))
         else
             ema_gpu=$(( (3 * gpu_temp + 7 * ema_gpu) / 10 ))
@@ -533,26 +556,38 @@ while true; do
         gpu_miss=0
     fi
 
-    cpu_target=$(pwm_for_temp CT CP "$ema_cpu")
+    if (( gpu_temp >= EMERGENCY_TEMP_MC )); then
+        if apply 255 "$cpu_temp" "$gpu_temp"; then
+            cur_pwm=255; prev_pwm=255; desired_pwm=255
+            last_up_temp=$gpu_temp
+        fi
+        (( emergency_active )) || echo "warning: emergency GPU temperature — fan at full speed (${gpu_temp}mc)" >&2
+        emergency_active=1
+        iteration_done && break
+        continue
+    fi
+    if (( emergency_active )); then
+        echo "info: temperatures below emergency threshold — resuming configured curve" >&2
+        emergency_active=0
+    fi
+
+    cpu_control_temp=$(control_temp "$cpu_temp" "$ema_cpu")
+    gpu_control_temp=$(control_temp "$gpu_temp" "$ema_gpu")
+    cpu_target=$(pwm_for_temp CT CP "$cpu_control_temp")
     gpu_target=0
-    (( ema_gpu > 0 )) && gpu_target=$(pwm_for_temp GPU_CT GPU_CP "$ema_gpu")
+    (( gpu_control_temp > 0 )) && gpu_target=$(pwm_for_temp GPU_CT GPU_CP "$gpu_control_temp")
     target=$(( cpu_target > gpu_target ? cpu_target : gpu_target ))
 
     if [[ -f "$SILENT_FLAG" ]]; then
-        (( ema_cpu < SILENT_OFF_BELOW_MC && (ema_gpu == 0 || ema_gpu < GPU_SILENT_OFF_BELOW_MC) )) && target=0
+        (( cpu_control_temp < SILENT_OFF_BELOW_MC && (gpu_control_temp == 0 || gpu_control_temp < GPU_SILENT_OFF_BELOW_MC) )) && target=0
     fi
+    (( stall_active )) && target=255
 
-    effective_temp=$(( ema_cpu > ema_gpu ? ema_cpu : ema_gpu ))
+    effective_temp=$(( cpu_control_temp > gpu_control_temp ? cpu_control_temp : gpu_control_temp ))
 
-    if (( target > desired_pwm )); then
-        desired_pwm=$target
-        last_up_temp=$effective_temp
-    elif (( target < desired_pwm && effective_temp <= last_up_temp - HYST_MC )); then
-        desired_pwm=$target
-    fi
+    update_desired_pwm "$target" "$effective_temp"
 
-    candidate_pwm=$(next_pwm "$desired_pwm" "$cur_pwm" "$(( startup_cycles > 0 ))")
-    (( startup_cycles > 0 )) && (( startup_cycles-- ))
+    candidate_pwm=$(next_pwm "$desired_pwm" "$cur_pwm" "$(( EPOCHSECONDS < startup_until ))")
 
     (( MIN_PWM > 0 && candidate_pwm > 0 && candidate_pwm < MIN_PWM )) && candidate_pwm=$MIN_PWM
 
@@ -565,17 +600,39 @@ while true; do
 
     if (( RPM_STALL_WARN && cur_pwm > 80 )); then
         (( stall_cycles++ ))
-        if (( stall_cycles >= 5 )); then
-            fan1=$(cat "$HP_HWMON/fan1_input" 2>/dev/null)
-            if [[ "$fan1" =~ ^[0-9]+$ ]] && (( fan1 < 200 )); then
-                echo "warning: fan may be stalled — pwm=$cur_pwm but fan1=${fan1}rpm" >&2
+        if (( stall_cycles >= 5 || stall_active )); then
+            (( ${#FAN_INPUTS[@]} > 0 )) || mapfile -t FAN_INPUTS < <(find_fan_inputs)
+            stalled=0
+            log_stall=0
+            if (( ! stall_active || EPOCHSECONDS - stall_last_log >= 30 )); then
+                log_stall=1
+            fi
+            for fan_path in "${FAN_INPUTS[@]}"; do
+                fan_rpm=$(cat "$fan_path" 2>/dev/null) || continue
+                if [[ "$fan_rpm" =~ ^[0-9]+$ ]] && (( fan_rpm < 200 )); then
+                    (( log_stall )) && echo "warning: $(basename "$fan_path" _input) may be stalled — pwm=$cur_pwm but rpm=$fan_rpm" >&2
+                    stalled=1
+                fi
+            done
+            if (( stalled )); then
+                (( log_stall )) && stall_last_log=$EPOCHSECONDS
+                stall_active=1
+                if apply 255 "$ema_cpu" "$ema_gpu"; then
+                    cur_pwm=255; prev_pwm=255; desired_pwm=255
+                    last_up_temp=999999
+                fi
+            elif (( stall_active )); then
+                echo "info: fan RPM recovered — resuming configured curve" >&2
+                stall_active=0
             fi
             stall_cycles=0
         fi
     else
         stall_cycles=0
     fi
+    iteration_done && break
 done
+cleanup
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
