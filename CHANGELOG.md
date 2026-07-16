@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Add immediate CPU/GPU emergency-temperature override and persistent fan-stall fail-safe.
+- Monitor every supported GPU temperature and every available fan tachometer.
+- React immediately to rising raw temperatures while retaining EMA smoothing for cooldown.
+- Verify PWM writes and firmware/manual control transitions; roll back failed fixed-PWM requests.
+- Preserve last-known-good configuration on invalid reloads and add explicit config validation.
+- Prevent competing daemon instances and rate-limit persistent stall warnings.
+- Add simulated-hwmon integration coverage for emergency, sensor-loss, stall, and rollback paths.
+- Run the service as a dedicated unprivileged user with scoped udev permissions.
+- Harden service lifecycle, configuration writes, sandboxing, and project scripts.
+- Remove kernel-driver build tooling and keep the repository focused on hpfand.
+
 ## [2.4.0] - 2026-07-12
 
 - Make PWM writes transactional and retry failed sysfs writes.
@@ -8,7 +21,6 @@
 - Replace root-level config sourcing with a strict numeric parser and full validation.
 - Watch the config directory so atomic editor saves reload correctly.
 - Restrict silent-mode access to the `hpfand` group and harden the systemd service.
-- Verify downloaded hp-wmi source before building/loading the kernel module.
 - Add regression tests for curves, slew limiting, and config parsing.
 - Fix initial/sysfs reads that incorrectly combined Bash's optimized file read with stderr redirection.
 - Ensure reinstalling restarts an already-running daemon.
@@ -25,8 +37,6 @@ Project renamed from `hp-laptop-fan-control` to `hpfand`. Breaking change for ex
 - Service: `hp-fan-control.service` → `hpfand.service`
 
 ### Added
-- AUR packages: `hpfand` and `hp-wmi-dkms` (DKMS, auto-rebuilds on kernel update)
-- `build-module.sh` — one-command module builder for pre-7.1 kernels; sparse-clones only the driver file
 - `CONTRIBUTING.md`, troubleshooting section, `hpf status` example in README
 
 ### Fixed
@@ -41,7 +51,6 @@ Project renamed from `hp-laptop-fan-control` to `hpfand`. Breaking change for ex
 - Separate GPU fan curve — `GPU_CT`/`GPU_CP` config vars for an independent GPU curve; daemon uses `max(cpu_pwm, gpu_pwm)` each cycle; defaults to CPU curve if unset
 - inotify conf reload — changes to `/etc/hpfand.conf` apply instantly without daemon restart (requires `inotify-tools`; graceful fallback without it)
 - `hpf log [N]` — show last N journal entries (default 50)
-- Earlier service startup — `After=systemd-modules-load.service`
 
 ### Fixed
 - Silent mode now persists across reboots — flag moved from `/tmp` to `/var/lib/hpfand/silent`
