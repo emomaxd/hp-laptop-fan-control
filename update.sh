@@ -7,6 +7,7 @@ PREFIX="${PREFIX:-/usr/local}"
 [[ $EUID -eq 0 ]] || { echo "error: run as root"; exit 1; }
 [[ "$PREFIX" =~ ^/[A-Za-z0-9_./:+-]+$ ]] || { echo "error: PREFIX must be an absolute path without whitespace"; exit 1; }
 command -v systemctl >/dev/null 2>&1 || { echo "error: systemctl not found"; exit 1; }
+command -v systemd-notify >/dev/null 2>&1 || { echo "error: systemd-notify not found"; exit 1; }
 command -v udevadm >/dev/null 2>&1 || { echo "error: udevadm not found"; exit 1; }
 command -v flock >/dev/null 2>&1 || { echo "error: flock not found (install util-linux)"; exit 1; }
 getent group hpfand >/dev/null || groupadd --system hpfand

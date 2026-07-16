@@ -8,6 +8,7 @@
 - Verify PWM writes and firmware/manual control transitions; roll back failed fixed-PWM requests.
 - Preserve last-known-good configuration on invalid reloads and add explicit config validation.
 - Prevent competing daemon instances and rate-limit persistent stall warnings.
+- Add a systemd watchdog heartbeat for a stuck control loop.
 - Add simulated-hwmon integration coverage for emergency, sensor-loss, stall, and rollback paths.
 - Run the service as a dedicated unprivileged user with scoped udev permissions.
 - Harden service lifecycle, configuration writes, sandboxing, and project scripts.

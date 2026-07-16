@@ -2,7 +2,9 @@
 Description=hpfand — HP Victus/Omen fan curve daemon
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
+WatchdogSec=30
 User=hpfand
 Group=hpfand
 ExecStart=HPFAND_BIN

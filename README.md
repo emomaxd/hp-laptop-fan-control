@@ -100,7 +100,8 @@ Temperature increases use the hotter of the raw and smoothed readings, so EMA
 filtering cannot delay a fan-speed increase. Smoothing still applies while
 temperatures fall. Startup down-slew protection is time-based rather than tied
 to the configured polling interval. Only one daemon instance may hold the PWM
-controller lock.
+controller lock. systemd also watches the control-loop heartbeat and restarts a
+stuck daemon; polling intervals are therefore limited to 1–10 seconds.
 
 `hpf follow` maps platform profiles as follows:
 

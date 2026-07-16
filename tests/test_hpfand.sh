@@ -158,6 +158,15 @@ fi
 flock -u "$held_lock"
 check_contains 'already running' "$TMP/lock.log" "singleton lock failure is actionable"
 
+printf '%s\n' '#!/bin/sh' "printf '%s\\n' \"\$*\" >> \"\$WATCHDOG_LOG\"" > "$TMP/systemd-notify"
+chmod +x "$TMP/systemd-notify"
+WATCHDOG_LOG="$TMP/watchdog.log"
+export WATCHDOG_LOG
+PATH="$TMP:$PATH" NOTIFY_SOCKET=test notify_systemd --ready
+PATH="$TMP:$PATH" NOTIFY_SOCKET=test notify_systemd --watchdog
+check_contains '^--ready$' "$WATCHDOG_LOG" "daemon announces readiness to systemd"
+check_contains '^--watchdog$' "$WATCHDOG_LOG" "daemon emits watchdog heartbeat"
+
 printf '100000\n' > "$CPU/temp1_input"
 printf '10\n' > "$HP/pwm1"
 run_daemon 1 "$TMP/emergency.log"
