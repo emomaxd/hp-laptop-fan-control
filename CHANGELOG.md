@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [2.5.0] - 2026-07-16
 
 - Add immediate CPU/GPU emergency-temperature override and persistent fan-stall fail-safe.
 - Monitor every supported GPU temperature and every available fan tachometer.
