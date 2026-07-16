@@ -23,12 +23,13 @@ Remove serial numbers, UUIDs and unrelated journal output.
 Keep changes small and preserve the fail-safe behavior. Run:
 
 ```sh
-bash -n hpfand hpf install.sh update.sh uninstall.sh build-module.sh
+bash -n hpfand hpf install.sh update.sh uninstall.sh tests/test_hpfand.sh
+shellcheck -x -e SC1090 hpfand hpf install.sh update.sh uninstall.sh tests/test_hpfand.sh
 tests/test_hpfand.sh
+udevadm verify 90-hpfand.rules
 git diff --check
 ```
 
-Test control-loop changes with `sudo hpfand --dry-run` before writing to
-hardware. Kernel driver changes belong in the
-[`hp-wmi-victus-fan-v4`](https://github.com/emomaxd/linux/tree/hp-wmi-victus-fan-v4)
-tree.
+Test control-loop changes with the simulated hwmon fixtures and with
+`sudo hpfand --dry-run` before writing to hardware. Kernel driver development is
+outside this repository's scope.

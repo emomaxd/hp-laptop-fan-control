@@ -1,8 +1,8 @@
 # hpfand
 
-`hpfand` is a fan-curve daemon for HP Victus and Omen laptops. It reads CPU and
-GPU temperatures from hwmon and writes a single PWM value to the native
-`hp_wmi` interface.
+`hpfand` is a small fan-curve daemon for supported HP Victus and Omen laptops.
+It reads CPU and GPU temperatures from Linux hwmon, applies a configurable
+curve, and writes the resulting PWM value to the native `hp_wmi` interface.
 
 ```text
 $ hpf status
@@ -16,8 +16,8 @@ fan2:    1200 rpm
 pwm:     52/255
 ```
 
-No GUI, background framework or EC register poking. The daemon is a Bash
-process managed by systemd.
+There is no GUI, framework, or direct embedded-controller access. The daemon is
+a single Bash process managed and sandboxed by systemd.
 
 ## Check support
 
@@ -26,11 +26,16 @@ ls /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1 >/dev/null 2>&1 \
   && echo supported || echo unavailable
 ```
 
-The interface is available in the upstream kernel on supported boards from
-Linux 7.1. Older kernels need the patched module described below. See the
-[hardware matrix](docs/hardware.md) for board IDs and verified machines.
+If this prints `unavailable`, hpfand cannot control the machine. Do not install
+it until the running kernel exposes the interface. See the
+[hardware matrix](docs/hardware.md) for verified machines.
 
 ## Install
+
+> [!WARNING]
+> Fan control can cause overheating or thermal shutdowns. Confirm hardware
+> support first, keep the firmware's thermal protections enabled, and test
+> custom curves conservatively.
 
 From source:
 
@@ -39,6 +44,12 @@ git clone https://github.com/emomaxd/hpfand.git
 cd hpfand
 sudo ./install.sh
 ```
+
+The installer requires systemd and refuses to enable the service unless the
+PWM interface is already present. It installs `hpfand` and `hpf` under
+`/usr/local/bin` by default. `udev` and `flock` (from util-linux) are required.
+The daemon runs as a dedicated unprivileged `hpfand` user; a narrowly scoped
+udev rule grants that user access only to the HP PWM attributes.
 
 To let the current user toggle silent mode without root:
 
@@ -60,10 +71,13 @@ hpf log 50              read daemon logs
 sudo hpf set balanced   apply silent, balanced or performance
 sudo hpf follow         follow the ACPI platform power profile
 sudo hpf edit           edit /etc/hpfand.conf and restart the daemon
+hpf check               validate /etc/hpfand.conf without changing fan state
 sudo hpf pwm 120        stop the daemon and hold a fixed PWM value
 ```
 
 `hpf pwm` disables the daemon's thermal response. Apply a preset to restore it.
+The command verifies both sysfs writes and attempts to restore firmware control
+if locking the requested PWM fails.
 
 ## Control loop
 
@@ -74,7 +88,19 @@ decreases wait for the configured hysteresis and follow `SLEW_DOWN`.
 
 The daemon only updates sysfs when the PWM changes. Failed writes are retried.
 Three invalid CPU readings force PWM 255. On a clean shutdown, control returns
-to firmware mode.
+to firmware mode and the handoff is verified. A raw CPU or GPU reading at or
+above `EMERGENCY_TEMP` bypasses smoothing, hysteresis, and slew limiting and
+immediately requests PWM 255. If either fan reports a stall while PWM is high,
+the daemon also requests PWM 255 and identifies the affected fan in the log.
+
+On multi-GPU systems, every supported GPU hwmon temperature is considered and
+the hottest valid reading drives the GPU curve.
+
+Temperature increases use the hotter of the raw and smoothed readings, so EMA
+filtering cannot delay a fan-speed increase. Smoothing still applies while
+temperatures fall. Startup down-slew protection is time-based rather than tied
+to the configured polling interval. Only one daemon instance may hold the PWM
+controller lock.
 
 `hpf follow` maps platform profiles as follows:
 
@@ -104,11 +130,17 @@ MIN_PWM=0
 FOLLOW_PLATFORM_PROFILE=0
 RPM_STALL_WARN=1
 SILENT_OFF_BELOW=0
+EMERGENCY_TEMP=95
 ```
 
 `CT`/`GPU_CT` are degrees Celsius. `CP`/`GPU_CP` are PWM values from 0 to 255.
 GPU arrays are optional and default to the CPU curve. `SILENT_OFF_BELOW=0`
-uses the second-highest curve point.
+uses the second curve point. `EMERGENCY_TEMP` accepts 70–100°C and is
+independent of the configured curves. Invalid live reloads retain the last
+known-good configuration instead of changing the active curve.
+
+When platform-profile following is enabled, a custom GPU curve remains intact;
+only the CPU curve follows the selected platform profile.
 
 If `inotify-tools` is installed, atomic saves reload the file without a service
 restart. Inspect curve output without touching PWM:
@@ -116,22 +148,6 @@ restart. Inspect curve output without touching PWM:
 ```sh
 sudo hpfand --dry-run
 ```
-
-## Kernels before 7.1
-
-Install headers for the running kernel, then build the reviewed `hp_wmi`
-backport:
-
-```sh
-sudo ./build-module.sh
-sudo ./install.sh
-```
-
-The script verifies the driver source against a pinned SHA-256 before compiling
-or loading it. The module must be rebuilt after a kernel update.
-
-The upstream driver work is tracked in
-[`hp-wmi-victus-fan-v4`](https://github.com/emomaxd/linux/commits/hp-wmi-victus-fan-v4).
 
 ## Troubleshooting
 
@@ -141,7 +157,8 @@ The upstream driver work is tracked in
   `manual (daemon active)`.
 - GPU temperature is absent: a discrete GPU in D3cold has no active hwmon
   sensor. It is detected when the GPU wakes.
-- Kernel updated and PWM disappeared: rebuild the backported module.
+- PWM disappeared after a kernel update: verify that the running kernel still
+  exposes the `hp_wmi` PWM interface. hpfand does not install kernel drivers.
 
 For new hardware, open a
 [compatibility report](https://github.com/emomaxd/hpfand/issues/new?template=hardware.yml).
@@ -150,6 +167,15 @@ For new hardware, open a
 
 ```sh
 sudo ./uninstall.sh
+```
+
+## Development
+
+The regression suite runs the daemon against a simulated hwmon tree; it does
+not write to the host's fan controls:
+
+```sh
+tests/test_hpfand.sh
 ```
 
 Licensed under GPL-2.0-only.
