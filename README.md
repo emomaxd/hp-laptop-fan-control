@@ -1,8 +1,14 @@
-# hpfand
+# HP Fan Control for Linux — hpfand
 
-`hpfand` is a small fan-curve daemon for supported HP Victus and Omen laptops.
-It reads CPU and GPU temperatures from Linux hwmon, applies a configurable
-curve, and writes the resulting PWM value to the native `hp_wmi` interface.
+`hpfand` is a lightweight Linux fan-control daemon for supported HP Victus and
+HP Omen laptops. It reads CPU and GPU temperatures from Linux `hwmon`, applies
+a configurable fan curve, and writes the resulting PWM value through the
+kernel's native `hp_wmi` interface.
+
+Use it to control HP laptop fans on Linux with automatic CPU/GPU fan curves,
+silent, balanced, and performance presets, live RPM monitoring, and a small
+`hpf` command-line interface. It does not require a GUI or direct
+embedded-controller access.
 
 ```text
 $ hpf status
@@ -16,8 +22,7 @@ fan2:    1200 rpm
 pwm:     52/255
 ```
 
-There is no GUI, framework, or direct embedded-controller access. The daemon is
-a single Bash process managed and sandboxed by systemd.
+The daemon is a single Bash process managed and sandboxed by systemd.
 
 ## Check support
 
