@@ -25,6 +25,10 @@ check_contains() {
     fi
 }
 
+set_defaults
+check 1 "$FOLLOW_PLATFORM_PROFILE" "clean install follows the platform profile by default"
+check '0 30 80 170 255' "${CP[*]}" "missing platform profile falls back to balanced defaults"
+
 CT=(40000 50000 60000); CP=(10 100 220)
 check 10 "$(pwm_for_temp CT CP 30000)" "lower endpoint honors CP"
 check 220 "$(pwm_for_temp CT CP 70000)" "upper endpoint honors CP"

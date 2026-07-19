@@ -56,6 +56,10 @@ PWM interface is already present. It installs `hpfand` and `hpf` under
 The daemon runs as a dedicated unprivileged `hpfand` user; a narrowly scoped
 udev rule grants that user access only to the HP PWM attributes.
 
+No configuration is required after installation. When the kernel exposes a
+platform profile, hpfand follows it automatically; otherwise it safely remains
+on the balanced curve.
+
 To let the current user toggle silent mode without root:
 
 ```sh
@@ -133,7 +137,7 @@ SLEW_UP=100
 SLEW_DOWN=20
 MIN_PWM=0
 
-FOLLOW_PLATFORM_PROFILE=0
+FOLLOW_PLATFORM_PROFILE=1
 RPM_STALL_WARN=1
 SILENT_OFF_BELOW=0
 EMERGENCY_TEMP=95

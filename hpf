@@ -135,8 +135,14 @@ print_status() {
     mapfile -t FAN_INPUT_PATHS < <(find_fan_inputs "$HP_HWMON")
 
     local preset="custom"
-    [[ -f "$CONF" ]] && grep -q "^# preset:" "$CONF" && preset=$(grep "^# preset:" "$CONF" | cut -d' ' -f3)
-    [[ -f "$CONF" ]] && grep -q "^FOLLOW_PLATFORM_PROFILE=1" "$CONF" && preset="auto (follow profile)"
+    if [[ -f "$CONF" ]]; then
+        grep -q "^# preset:" "$CONF" && preset=$(grep "^# preset:" "$CONF" | cut -d' ' -f3)
+        grep -q "^FOLLOW_PLATFORM_PROFILE=1" "$CONF" && preset="auto (follow profile)"
+    elif [[ -f "$SYSFS_ROOT/firmware/acpi/platform_profile" ]]; then
+        preset="auto (follow profile)"
+    else
+        preset="balanced (default)"
+    fi
     [[ -f "$SILENT_FLAG" ]] && preset+=" [silent]"
 
     local cpu_mc pwm mode
@@ -228,7 +234,7 @@ EOF
 cmd_follow() {
     need_root
     if [[ ! -f "$SYSFS_ROOT/firmware/acpi/platform_profile" ]]; then
-        echo "error: /sys/firmware/acpi/platform_profile not found — power-profiles-daemon or similar required"
+        echo "error: kernel platform_profile interface not found"
         exit 1
     fi
     if ! write_config <<EOF
