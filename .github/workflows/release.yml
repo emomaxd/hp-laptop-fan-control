@@ -1,0 +1,29 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check syntax
+        run: bash -n hpfand hpf install.sh update.sh uninstall.sh tests/test_hpfand.sh
+      - name: ShellCheck
+        run: shellcheck -x -e SC1090 hpfand hpf install.sh update.sh uninstall.sh tests/test_hpfand.sh
+      - name: Run regression tests
+        run: tests/test_hpfand.sh
+      - name: Check whitespace
+        run: git show --check --format= HEAD
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --verify-tag --generate-notes --title "hpfand $TAG"
