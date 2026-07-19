@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Follow the kernel platform profile by default, with a balanced fallback when
+  the interface is unavailable.
+- Add a live CLI demo and a generated view of the built-in fan curves.
+
 ## [2.5.2] - 2026-07-16
 
 - Accept the PWM quantization performed by HP firmware while still rejecting

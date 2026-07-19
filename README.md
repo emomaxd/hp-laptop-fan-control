@@ -10,19 +10,29 @@ silent, balanced, and performance presets, live RPM monitoring, and a small
 `hpf` command-line interface. It does not require a GUI or direct
 embedded-controller access.
 
-```text
-$ hpf status
-preset:  auto (follow profile)
-mode:    manual (daemon active)
-profile: balanced
----
-cpu:     54°C
-fan1:    1200 rpm
-fan2:    1200 rpm
-pwm:     52/255
-```
+<table>
+  <tr>
+    <td width="50%"><img src="docs/demo.gif" alt="Live hpf status watch mode"></td>
+    <td width="50%"><img src="docs/commands.gif" alt="Typing hpf presets, toggle, and log commands"></td>
+  </tr>
+</table>
 
 The daemon is a single Bash process managed and sandboxed by systemd.
+
+## Why hpfand?
+
+- **Install and forget.** The default fan curve automatically follows the
+  system's `low-power`, `balanced`, and `performance` platform profiles.
+- **Almost zero configuration.** Safe defaults work without a config file;
+  presets and custom CPU/GPU curves remain available when wanted.
+- **Native kernel interface.** It uses the upstream Linux `hp_wmi` hwmon
+  interface, with no patched DKMS module or direct embedded-controller access.
+- **Small and least-privileged.** The Bash daemon runs as a dedicated
+  unprivileged user and only receives access to the required PWM attributes.
+- **Thermal fail-safes.** Invalid sensors, emergency temperatures, fan stalls,
+  failed writes, and stuck control loops all have explicit recovery paths.
+
+![Silent, balanced, and performance fan curves](docs/fan-curves.svg)
 
 ## Check support
 
