@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a daemon, CLI, packaging, or thermal-safety problem
+description: Report a daemon, CLI, installation, or thermal-safety problem
 title: "bug: "
 labels: [bug]
 body:

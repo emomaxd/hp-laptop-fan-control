@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 
 CONF=${CONF:-/etc/hpfand.conf}
 SILENT_FLAG=${SILENT_FLAG:-/var/lib/hpfand/silent}
