@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [2.6.0] - 2026-07-20
 
 - Follow the kernel platform profile by default, with a balanced fallback when
   the interface is unavailable.

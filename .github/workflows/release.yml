@@ -20,10 +20,11 @@ jobs:
         run: tests/test_hpfand.sh
       - name: Check whitespace
         run: git diff --check 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
-      - name: Publish release
+      - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --verify-tag --generate-notes --title "hpfand $TAG"
+            gh release create "$TAG" --draft --verify-tag --generate-notes \
+              --title "hpfand $TAG"
